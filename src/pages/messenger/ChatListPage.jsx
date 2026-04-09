@@ -160,23 +160,18 @@ export default function ChatListPage() {
           <div className="flex flex-col items-center justify-center py-20 px-4">
             <span className="material-symbols-outlined text-on-surface-variant text-6xl mb-4 opacity-20">chat</span>
             <h3 className="font-headline text-lg font-bold text-on-surface mb-2">No conversations yet</h3>
-            <p className="text-on-surface-variant text-sm text-center mb-6">Find people to connect with and start messaging</p>
-            <button
-              onClick={() => navigate('/messenger/search')}
-              className="gradient-secondary text-on-secondary px-6 py-2.5 rounded-full font-medium text-sm hover:scale-105 transition-transform"
-            >
-              Discover People
-            </button>
+            <p className="text-on-surface-variant text-sm text-center mb-6">Click the + button to find people and start messaging</p>
           </div>
         )}
       </div>
 
-      {/* FAB (mobile) */}
+      {/* FAB (Add People) */}
       <button
         onClick={() => navigate('/messenger/search')}
-        className="md:hidden fixed bottom-24 right-5 w-14 h-14 rounded-full bg-secondary flex items-center justify-center shadow-[0_10px_30px_rgba(0,228,117,0.4)] hover:scale-110 transition-transform z-40"
+        className="fixed bottom-24 md:bottom-10 right-5 md:right-10 w-14 h-14 rounded-full bg-secondary flex items-center justify-center shadow-[0_10px_30px_rgba(0,228,117,0.4)] hover:scale-110 transition-transform z-40"
+        title="Add People"
       >
-        <span className="material-symbols-outlined text-white text-xl">edit</span>
+        <span className="material-symbols-outlined text-white text-3xl">add</span>
       </button>
     </div>
   )

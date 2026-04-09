@@ -1,21 +1,29 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { db } from '../../lib/firebase'
-import { collection, query, where, orderBy, onSnapshot, updateDoc, doc } from 'firebase/firestore'
+import { collection, query, where, onSnapshot, updateDoc, doc } from 'firebase/firestore'
+import { useNavigate } from 'react-router-dom'
 
 export default function NotificationsPage() {
   const { userProfile } = useAuth()
+  const navigate = useNavigate()
   const [notifications, setNotifications] = useState([])
 
   useEffect(() => {
     if (!userProfile?.id) return
     const q = query(
       collection(db, 'notifications'),
-      where('toUserId', '==', userProfile.id),
-      orderBy('createdAt', 'desc')
+      where('toUserId', '==', userProfile.id)
     )
     const unsub = onSnapshot(q, (snapshot) => {
-      setNotifications(snapshot.docs.map(d => ({ id: d.id, ...d.data() })))
+      const notifs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }))
+      // Sort locally to avoid composite index requirement
+      notifs.sort((a, b) => {
+        const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0
+        const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0
+        return timeB - timeA
+      })
+      setNotifications(notifs)
     })
     return unsub
   }, [userProfile?.id])
@@ -37,8 +45,13 @@ export default function NotificationsPage() {
     <div className="max-w-2xl mx-auto px-4 py-6">
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
-        <h1 className="font-headline text-3xl md:text-5xl font-bold text-on-surface" style={{ fontStyle: 'italic' }}>Notifications</h1>
-        <button onClick={markAllRead} className="text-secondary text-sm font-medium hover:underline">Mark all as read</button>
+        <div className="flex items-center gap-3">
+          <button onClick={() => navigate('/messenger/chats')} className="w-10 h-10 rounded-full hover:bg-surface-container-high flex items-center justify-center transition-colors">
+            <span className="material-symbols-outlined text-on-surface">arrow_back</span>
+          </button>
+          <h1 className="font-headline text-3xl md:text-5xl font-bold text-on-surface" style={{ fontStyle: 'italic' }}>Notifications</h1>
+        </div>
+        <button onClick={markAllRead} className="text-secondary text-sm font-medium hover:underline flex-shrink-0">Mark all as read</button>
       </div>
 
       {notifications.length === 0 ? (
