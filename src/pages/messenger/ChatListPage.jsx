@@ -43,39 +43,6 @@ export default function ChatListPage() {
 
   return (
     <div className="max-w-3xl mx-auto">
-      {/* Stories Bar */}
-      <div className="px-4 py-4 border-b border-outline-variant/20">
-        <div className="flex gap-4 overflow-x-auto hide-scrollbar pb-1">
-          {/* Your Story */}
-          <button onClick={() => navigate('/messenger/stories')} className="flex flex-col items-center gap-1.5 flex-shrink-0">
-            <div className="relative w-14 h-14 rounded-full border-2 border-dashed border-secondary/50 flex items-center justify-center">
-              {userProfile?.profilePic ? (
-                <img src={userProfile.profilePic} alt="" className="w-12 h-12 rounded-full object-cover" />
-              ) : (
-                <div className="w-12 h-12 rounded-full bg-surface-container-highest flex items-center justify-center">
-                  <span className="material-symbols-outlined text-outline">person</span>
-                </div>
-              )}
-              <div className="absolute -bottom-0.5 -right-0.5 w-5 h-5 bg-secondary rounded-full flex items-center justify-center border-2 border-background">
-                <span className="material-symbols-outlined text-white text-xs">add</span>
-              </div>
-            </div>
-            <span className="text-on-surface-variant text-[10px]">Your Story</span>
-          </button>
-
-          {/* Other stories (placeholder) */}
-          {[1, 2, 3, 4].map(i => (
-            <button key={i} className="flex flex-col items-center gap-1.5 flex-shrink-0">
-              <div className="w-14 h-14 rounded-full border-2 border-secondary p-0.5">
-                <div className="w-full h-full rounded-full bg-surface-container-highest flex items-center justify-center">
-                  <span className="material-symbols-outlined text-outline text-lg">person</span>
-                </div>
-              </div>
-              <span className="text-on-surface-variant text-[10px]">User {i}</span>
-            </button>
-          ))}
-        </div>
-      </div>
 
       {/* Search */}
       <div className="px-4 pt-4">

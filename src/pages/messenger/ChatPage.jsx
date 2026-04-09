@@ -88,7 +88,10 @@ export default function ChatPage() {
         type, content: '', fileURL: result.secure_url,
         fileName: file.name, fileSize: file.size,
       })
-    } catch (err) { console.error('Upload failed:', err) }
+    } catch (err) { 
+      console.error('Upload failed:', err)
+      alert('Upload failed: ' + err.message)
+    }
     finally { setUploading(false) }
   }
 

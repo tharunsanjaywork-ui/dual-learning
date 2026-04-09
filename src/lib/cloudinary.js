@@ -9,6 +9,10 @@ const LIMITS = {
 }
 
 export const uploadToCloudinary = async (file, type = 'image', folder = 'messages') => {
+  if (!CLOUD_NAME || CLOUD_NAME === 'your_cloud_name') {
+    throw new Error('Cloudinary environment variables (VITE_CLOUDINARY_CLOUD_NAME) are missing. Please add them to your Render dashboard or local .env file.')
+  }
+
   const limit = LIMITS[type] || LIMITS.file
   if (file.size > limit) {
     throw new Error(`File too large. Max size for ${type}: ${limit / (1024 * 1024)}MB`)

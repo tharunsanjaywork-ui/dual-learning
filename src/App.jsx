@@ -17,7 +17,6 @@ import ChatPage from './pages/messenger/ChatPage'
 import GroupChatPage from './pages/messenger/GroupChatPage'
 import SearchPage from './pages/messenger/SearchPage'
 import NotificationsPage from './pages/messenger/NotificationsPage'
-import StoriesPage from './pages/messenger/StoriesPage'
 import ProfilePage from './pages/messenger/ProfilePage'
 import EditProfilePage from './pages/messenger/EditProfilePage'
 import SettingsPage from './pages/messenger/SettingsPage'
@@ -95,7 +94,6 @@ export default function App() {
         <Route path="group/:groupId" element={<GroupChatPage />} />
         <Route path="search" element={<SearchPage />} />
         <Route path="notifications" element={<NotificationsPage />} />
-        <Route path="stories" element={<StoriesPage />} />
         <Route path="profile/:userId" element={<ProfilePage />} />
         <Route path="profile/edit" element={<EditProfilePage />} />
         <Route path="settings" element={<SettingsPage />} />
