@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect } from 'react'
+import { createContext, useContext, useState, useEffect, useRef } from 'react'
 import { auth, db } from '../lib/firebase'
 import {
   createUserWithEmailAndPassword,
@@ -26,15 +26,20 @@ export function AuthProvider({ children }) {
   const [mode, setMode] = useState(null) // 'study' | 'messenger'
   const [loading, setLoading] = useState(true)
 
+  const isSwitching = useRef(false)
+
   // Listen to Firebase Auth state
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
+      // Skip auth state changes during mode switching
+      if (isSwitching.current) return
+
       if (firebaseUser) {
         setUser(firebaseUser)
         // Fetch profile from Firestore (try both UIDs)
         const profileDoc = await getDoc(doc(db, 'users', firebaseUser.uid))
         if (profileDoc.exists()) {
-          setUserProfile({ id: firebaseUser.uid, ...profileDoc.data() })
+          setUserProfile({ id: profileDoc.id, ...profileDoc.data() })
         } else {
           // Try to find by studyAccountUid or messengerAccountUid
           const allUsers = await getDocs(collection(db, 'users'))
@@ -68,15 +73,26 @@ export function AuthProvider({ children }) {
     const email = `${username}@dualzone.app`
     const secretEmail = `${username}_secret@dualzone.app`
 
-    // Hash both passwords with bcrypt
+    // Hash both passwords with bcrypt (for in-app verification like switch modal)
     const studyHash = await bcrypt.hash(studyPassword, 12)
     const messengerHash = await bcrypt.hash(messengerPassword, 12)
 
-    // Create Firebase Auth account with study password
-    const cred = await createUserWithEmailAndPassword(auth, email, studyPassword)
+    // Create Firebase Auth account #1 with study password
+    const studyCred = await createUserWithEmailAndPassword(auth, email, studyPassword)
+    const studyUid = studyCred.user.uid
 
-    // Store user data in Firestore (keyed by Firebase Auth UID)
-    await setDoc(doc(db, 'users', cred.user.uid), {
+    // Sign out so we can create the second account
+    await signOut(auth)
+
+    // Create Firebase Auth account #2 with messenger password
+    const messengerCred = await createUserWithEmailAndPassword(auth, secretEmail, messengerPassword)
+    const messengerUid = messengerCred.user.uid
+
+    // Sign out the messenger account
+    await signOut(auth)
+
+    // Use the study UID as the primary Firestore document key
+    await setDoc(doc(db, 'users', studyUid), {
       username,
       email,
       secretEmail,
@@ -86,6 +102,8 @@ export function AuthProvider({ children }) {
       interests: interests || [],
       passwordStudy: studyHash,
       passwordMessenger: messengerHash,
+      studyAccountUid: studyUid,
+      messengerAccountUid: messengerUid,
       followers: [],
       following: [],
       closeFriends: [],
@@ -96,7 +114,7 @@ export function AuthProvider({ children }) {
     })
 
     // Create study progress doc
-    await setDoc(doc(db, 'studyProgress', cred.user.uid), {
+    await setDoc(doc(db, 'studyProgress', studyUid), {
       videosWatched: [],
       quizScores: [],
       streak: 0,
@@ -109,10 +127,7 @@ export function AuthProvider({ children }) {
     storage.setUsername(username)
     storage.setDisplayName(displayName)
     storage.setProfilePic(profilePic || '')
-    storage.setUserId(cred.user.uid)
-
-    // Sign out so user goes to login
-    await signOut(auth)
+    storage.setUserId(studyUid)
 
     return true
   }
@@ -188,20 +203,36 @@ export function AuthProvider({ children }) {
     const isMatch = await bcrypt.compare(password, userProfile.passwordMessenger)
     if (!isMatch) throw new Error('Incorrect password')
 
-    // Sign out current auth session
-    await signOut(auth)
+    // Prevent onAuthStateChanged from clearing state during re-auth
+    isSwitching.current = true
+    try {
+      // Sign out current auth session
+      await signOut(auth)
 
-    // Sign in with secret email and messenger password
-    const secretEmail = userProfile.secretEmail || `${userProfile.username}_secret@dualzone.app`
-    await signInWithEmailAndPassword(auth, secretEmail, password)
-
-    setMode('messenger')
+      // Sign in with secret email and messenger password
+      const secretEmail = userProfile.secretEmail || `${userProfile.username}_secret@dualzone.app`
+      const cred = await signInWithEmailAndPassword(auth, secretEmail, password)
+      setUser(cred.user)
+      setMode('messenger')
+    } finally {
+      isSwitching.current = false
+    }
     return true
   }
 
   // Switch from messenger to study (instant, no password)
-  const switchToStudy = () => {
-    setMode('study')
+  const switchToStudy = async () => {
+    if (!userProfile) return
+    // Re-authenticate with the study account
+    isSwitching.current = true
+    try {
+      const email = userProfile.email || `${userProfile.username}@dualzone.app`
+      // We can't re-auth without the study password, so just change mode
+      // The user is still authenticated and Firestore profile is preserved
+      setMode('study')
+    } finally {
+      isSwitching.current = false
+    }
   }
 
   // Logout

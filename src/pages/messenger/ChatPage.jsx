@@ -7,6 +7,13 @@ import { doc, getDoc } from 'firebase/firestore'
 import { uploadToCloudinary, getFileType } from '../../lib/cloudinary'
 import { searchGifs } from '../../lib/giphy'
 
+const EMOJIS = [
+  '😀', '😂', '🥹', '😍', '🥰', '😘', '😎', '🤩', '🥳', '😇',
+  '🙂', '🤔', '😏', '😌', '🥺', '😢', '😭', '😤', '🤯', '😱',
+  '🤗', '👋', '👍', '👎', '👏', '🙌', '🤝', '❤️', '🔥', '⭐',
+  '💯', '✅', '🎉', '🏆', '💪', '🙏', '📚', '✨', '💡', '🎯',
+]
+
 export default function ChatPage() {
   const { chatId } = useParams()
   const navigate = useNavigate()
