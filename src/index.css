@@ -1,0 +1,189 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #0d0e11;
+  --surface: #0d0e11;
+  --surface-container-low: #121317;
+  --surface-container: #181a1e;
+  --surface-container-high: #1e2024;
+  --surface-container-highest: #24262b;
+  --surface-bright: #2a2c32;
+  --primary: #a68cff;
+  --primary-dim: #7e51ff;
+  --primary-container: #7c4dff;
+  --primary-fixed: #c8b7ff;
+  --primary-fixed-dim: #bba6ff;
+  --on-primary: #25006b;
+  --secondary: #00e475;
+  --secondary-dim: #00d46c;
+  --secondary-container: #002d12;
+  --on-secondary: #004b22;
+  --tertiary: #81ecff;
+  --tertiary-container: #00e3fd;
+  --error: #fd6f85;
+  --error-container: #8a1632;
+  --on-surface: #e4e5ec;
+  --on-surface-variant: #aaabb2;
+  --outline: #74757c;
+  --outline-variant: #46484e;
+  --radius-default: 1rem;
+  --radius-lg: 2rem;
+  --radius-xl: 3rem;
+  --radius-full: 9999px;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  background-color: var(--background);
+  color: var(--on-surface);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Manrope', sans-serif;
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--surface-container-low);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--outline-variant);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--outline);
+}
+
+/* Glass morphism utility */
+@layer utilities {
+  .glass {
+    background: rgba(24, 26, 30, 0.7);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .glass-strong {
+    background: rgba(18, 19, 23, 0.85);
+    backdrop-filter: blur(30px);
+    -webkit-backdrop-filter: blur(30px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .glow-primary {
+    box-shadow: 0 0 30px rgba(166, 140, 255, 0.3);
+  }
+
+  .glow-secondary {
+    box-shadow: 0 0 30px rgba(0, 228, 117, 0.3);
+  }
+
+  .glow-error {
+    box-shadow: 0 0 20px rgba(253, 111, 133, 0.3);
+  }
+
+  .gradient-primary {
+    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dim) 100%);
+  }
+
+  .gradient-secondary {
+    background: linear-gradient(135deg, var(--secondary) 0%, var(--secondary-dim) 100%);
+  }
+
+  .gradient-hero {
+    background: linear-gradient(135deg, var(--primary-container) 0%, var(--primary-dim) 100%);
+  }
+
+  .text-gradient-primary {
+    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-fixed) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .text-gradient-secondary {
+    background: linear-gradient(135deg, var(--secondary) 0%, var(--tertiary) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .shimmer-bg {
+    background: linear-gradient(
+      90deg,
+      var(--surface-container) 25%,
+      var(--surface-container-high) 50%,
+      var(--surface-container) 75%
+    );
+    background-size: 200% 100%;
+  }
+
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .hide-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
+
+/* Input styling */
+input, textarea, select {
+  font-family: 'Inter', sans-serif;
+}
+
+input::placeholder, textarea::placeholder {
+  color: var(--outline);
+}
+
+/* Focus ring */
+input:focus, textarea:focus, select:focus, button:focus-visible {
+  outline: none;
+}
+
+/* Material icon sizing */
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+.material-symbols-outlined.filled {
+  font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+/* Ambient glow blobs */
+.ambient-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.15;
+  pointer-events: none;
+}
+
+/* Transition defaults */
+.transition-default {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
