@@ -373,8 +373,9 @@ export default function ChatPage() {
 
         {/* Upload indicator */}
         {uploading && (
-          <div className="p-2">
-            <div className="w-5 h-5 border-2 border-secondary border-t-transparent rounded-full animate-spin" />
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-container-high border border-outline-variant/30 rounded-xl mr-1 animate-pulse">
+            <div className="w-4 h-4 border-2 border-secondary border-t-transparent rounded-full animate-spin flex-shrink-0" />
+            <span className="text-xs font-medium text-secondary truncate">Uploading media, please wait...</span>
           </div>
         )}
 
