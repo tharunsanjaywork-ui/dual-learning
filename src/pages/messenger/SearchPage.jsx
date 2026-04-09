@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { db } from '../../lib/firebase'
-import { collection, getDocs } from 'firebase/firestore'
+import { collection, getDocs, addDoc, serverTimestamp } from 'firebase/firestore'
 import { useAuth } from '../../context/AuthContext'
 import { useChat } from '../../context/ChatContext'
 import { doc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore'
@@ -10,7 +10,7 @@ const FILTERS = ['All Residents', 'Deep Thinkers', 'Designers', 'Night Owls', 'E
 
 export default function SearchPage() {
   const navigate = useNavigate()
-  const { userProfile } = useAuth()
+  const { userProfile, setUserProfile } = useAuth()
   const { getOrCreateChat } = useChat()
   const [searchQuery, setSearchQuery] = useState('')
   const [results, setResults] = useState([])
@@ -42,9 +42,25 @@ export default function SearchPage() {
     if (isFollowing) {
       await updateDoc(userRef, { following: arrayRemove(userId) })
       await updateDoc(targetRef, { followers: arrayRemove(userProfile.id) })
+      setUserProfile(prev => ({ ...prev, following: prev.following.filter(id => id !== userId) }))
+      setResults(prev => prev.map(u => u.id === userId ? { ...u, followers: u.followers?.filter(id => id !== userProfile.id) || [] } : u))
     } else {
       await updateDoc(userRef, { following: arrayUnion(userId) })
       await updateDoc(targetRef, { followers: arrayUnion(userProfile.id) })
+      setUserProfile(prev => ({ ...prev, following: [...(prev.following || []), userId] }))
+      setResults(prev => prev.map(u => u.id === userId ? { ...u, followers: [...(u.followers || []), userProfile.id] } : u))
+
+      // Send notification
+      await addDoc(collection(db, 'notifications'), {
+        toUserId: userId,
+        type: 'follow',
+        data: {
+          fromId: userProfile.id,
+          fromName: userProfile.displayName
+        },
+        read: false,
+        createdAt: serverTimestamp()
+      })
     }
   }
 

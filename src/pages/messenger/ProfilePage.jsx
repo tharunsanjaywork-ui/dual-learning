@@ -3,12 +3,12 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { useChat } from '../../context/ChatContext'
 import { db } from '../../lib/firebase'
-import { doc, getDoc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore'
+import { doc, getDoc, updateDoc, arrayUnion, arrayRemove, addDoc, collection, serverTimestamp } from 'firebase/firestore'
 
 export default function ProfilePage() {
   const { userId } = useParams()
   const navigate = useNavigate()
-  const { userProfile } = useAuth()
+  const { userProfile, setUserProfile } = useAuth()
   const { getOrCreateChat } = useChat()
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -38,9 +38,25 @@ export default function ProfilePage() {
     if (isFollowing) {
       await updateDoc(myRef, { following: arrayRemove(profile.id) })
       await updateDoc(theirRef, { followers: arrayRemove(userProfile.id) })
+      setUserProfile(prev => ({ ...prev, following: prev.following.filter(id => id !== profile.id) }))
+      setProfile(prev => ({ ...prev, followers: prev.followers?.filter(id => id !== userProfile.id) || [] }))
     } else {
       await updateDoc(myRef, { following: arrayUnion(profile.id) })
       await updateDoc(theirRef, { followers: arrayUnion(userProfile.id) })
+      setUserProfile(prev => ({ ...prev, following: [...(prev.following || []), profile.id] }))
+      setProfile(prev => ({ ...prev, followers: [...(prev.followers || []), userProfile.id] }))
+
+      // Send notification
+      await addDoc(collection(db, 'notifications'), {
+        toUserId: profile.id,
+        type: 'follow',
+        data: {
+          fromId: userProfile.id,
+          fromName: userProfile.displayName
+        },
+        read: false,
+        createdAt: serverTimestamp()
+      })
     }
   }
 
