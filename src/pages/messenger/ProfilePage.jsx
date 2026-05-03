@@ -110,7 +110,7 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-6 md:py-8 animate-page-enter">
+    <div className="max-w-2xl mx-auto px-4 sm:px-6 md:px-8 py-6 md:py-8 animate-page-enter">
       {/* Back Button */}
       <button onClick={() => navigate(-1)} className="page-back-btn mb-4">
         <span className="material-symbols-outlined text-on-surface">arrow_back</span>
@@ -137,9 +137,9 @@ export default function ProfilePage() {
         </div>
 
         {/* Name */}
-        <h1 className="font-headline text-xl md:text-4xl font-black text-on-surface mb-1">{profile.displayName}</h1>
-        <p className="text-secondary font-medium mb-2">@{profile.username}</p>
-        {profile.bio && <p className="text-on-surface-variant text-sm max-w-sm mb-4">{profile.bio}</p>}
+        <h1 className="font-headline text-xl sm:text-2xl md:text-4xl font-black text-on-surface mb-1">{profile.displayName}</h1>
+        <p className="text-secondary font-medium text-sm sm:text-base mb-2">@{profile.username}</p>
+        {profile.bio && <p className="text-on-surface-variant text-sm sm:text-base max-w-sm mb-4">{profile.bio}</p>}
 
         {/* Interest chips */}
         {profile.interests?.length > 0 && (

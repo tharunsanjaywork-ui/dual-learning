@@ -80,7 +80,7 @@ export default function ChatListPage() {
 
           return (
             <button key={chat.id} onClick={() => openChat(chat)} onContextMenu={(e) => handleContextMenu(e, chat)}
-              className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-surface-container-high/50 transition-colors text-left">
+              className="w-full flex items-center gap-3 px-4 sm:px-6 py-3.5 hover:bg-surface-container-high/50 active:scale-[0.99] transition-all text-left">
               <div className="relative flex-shrink-0">
                 <div className={`w-14 h-14 rounded-full overflow-hidden ${isMuted ? 'opacity-60 grayscale' : ''}`}>
                   {other?.profilePic ? <img src={other.profilePic} alt="" className="w-full h-full object-cover" /> : (
@@ -109,8 +109,8 @@ export default function ChatListPage() {
         }) : (
           <div className="flex flex-col items-center justify-center py-20 px-4">
             <span className="material-symbols-outlined text-on-surface-variant text-6xl mb-4 opacity-20">chat</span>
-            <h3 className="font-headline text-lg font-bold text-on-surface mb-2">No conversations yet</h3>
-            <p className="text-on-surface-variant text-sm text-center mb-6">Click the + button to find people and start messaging</p>
+            <h3 className="font-headline text-lg sm:text-xl font-bold text-on-surface mb-2">No conversations yet</h3>
+            <p className="text-on-surface-variant text-sm sm:text-base text-center mb-6">Click the + button to find people and start messaging</p>
           </div>
         )}
       </div>

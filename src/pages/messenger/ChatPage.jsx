@@ -30,6 +30,9 @@ export default function ChatPage() {
   const inputRef = useRef(null)
   const mediaRecorderRef = useRef(null)
   const audioChunksRef = useRef([])
+  const audioPreviewRef = useRef(null)
+  const recordingTimerRef = useRef(null)
+  const audioStreamRef = useRef(null)
   const typingTimeoutRef = useRef(null)
 
   const [text, setText] = useState('')
@@ -42,7 +45,8 @@ export default function ChatPage() {
   const [showAttach, setShowAttach] = useState(false)
   const [replyTo, setReplyTo] = useState(null)
   const [uploading, setUploading] = useState(false)
-  const [recording, setRecording] = useState(false)
+  const [recordState, setRecordState] = useState('idle')
+  const [recordTime, setRecordTime] = useState(0)
   const [contextMenu, setContextMenu] = useState(null)
   const [editingMsg, setEditingMsg] = useState(null)
   const [editText, setEditText] = useState('')
@@ -143,33 +147,58 @@ export default function ChatPage() {
     typingTimeoutRef.current = setTimeout(() => setTyping(chatId, false), 3000)
   }
 
-  // Audio recording
+  // Audio recording — state machine: idle → recording → preview → idle
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      audioStreamRef.current = stream
       const mr = new MediaRecorder(stream)
       audioChunksRef.current = []
       mr.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data) }
-      mr.onstop = async () => {
+      mr.onstop = () => {
         stream.getTracks().forEach(t => t.stop())
         const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
-        if (blob.size < 500) return
-        setUploading(true)
-        try {
-          const result = await uploadBlobToCloudinary(blob, 'audio', 'messages')
-          await sendMessage(chatId, { type: 'audio', content: '', fileURL: result.secure_url, fileName: 'Voice message', fileSize: blob.size })
-        } catch (err) { alert('Audio upload failed: ' + err.message) }
-        finally { setUploading(false) }
+        if (blob.size < 500) { setRecordState('idle'); return }
+        audioPreviewRef.current = blob
+        setRecordState('preview')
       }
       mediaRecorderRef.current = mr
-      mr.start()
-      setRecording(true)
+      mr.start(1000)
+      setRecordState('recording')
+      setRecordTime(0)
+      recordingTimerRef.current = setInterval(() => setRecordTime(t => t + 1), 1000)
     } catch { alert('Microphone access denied') }
   }
-  const stopRecording = () => {
+  const stopRecordingForPreview = () => {
+    clearInterval(recordingTimerRef.current)
     if (mediaRecorderRef.current?.state === 'recording') mediaRecorderRef.current.stop()
-    setRecording(false)
   }
+  const cancelRecording = () => {
+    clearInterval(recordingTimerRef.current)
+    if (mediaRecorderRef.current?.state === 'recording') mediaRecorderRef.current.stop()
+    audioStreamRef.current?.getTracks().forEach(t => t.stop())
+    audioPreviewRef.current = null
+    audioChunksRef.current = []
+    setRecordState('idle')
+    setRecordTime(0)
+  }
+  const discardPreview = () => {
+    audioPreviewRef.current = null
+    setRecordState('idle')
+    setRecordTime(0)
+  }
+  const sendAudioPreview = async () => {
+    const blob = audioPreviewRef.current
+    if (!blob) return
+    setUploading(true)
+    setRecordState('idle')
+    try {
+      const result = await uploadBlobToCloudinary(blob, 'audio', 'messages')
+      await sendMessage(chatId, { type: 'audio', content: '', fileURL: result.secure_url, fileName: 'Voice message', fileSize: blob.size })
+    } catch (err) { alert('Audio upload failed: ' + err.message) }
+    finally { setUploading(false); audioPreviewRef.current = null; setRecordTime(0) }
+  }
+  const formatRecordTime = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
 
   // Location sharing
   const shareLocation = () => {
@@ -230,16 +259,12 @@ export default function ChatPage() {
         return <img src={msg.fileURL} alt="" className="max-w-[280px] rounded-xl cursor-pointer hover:opacity-90 transition-opacity" onClick={() => window.open(msg.fileURL)} />
       case 'audio':
         return (
-          <div className="flex items-center gap-3 min-w-[200px]">
-            <button className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0">
-              <span className="material-symbols-outlined text-lg">play_arrow</span>
-            </button>
-            <div className="flex gap-0.5 items-end flex-1 h-8">
-              {[...Array(20)].map((_, i) => (
-                <div key={i} className="w-1 bg-current rounded-full opacity-60" style={{ height: `${4 + Math.random() * 20}px` }} />
-              ))}
+          <div className="min-w-[200px] max-w-[280px]">
+            <audio controls src={msg.fileURL} className="w-full rounded-xl" style={{height: '40px'}} preload="metadata" />
+            <div className="flex items-center gap-2 mt-1 px-1">
+              <span className="text-[10px] opacity-50">{msg.fileName || 'Voice message'}</span>
+              {msg.fileSize && <span className="text-[10px] opacity-40">{(msg.fileSize / 1024).toFixed(0)} KB</span>}
             </div>
-            <span className="text-xs opacity-70">0:15</span>
           </div>
         )
       case 'video':
@@ -331,7 +356,7 @@ export default function ChatPage() {
           const isMine = msg.senderId === userProfile?.id
 
           return (
-            <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'} animate-fade-in`} onContextMenu={(e) => openContextMenu(e, msg)}>
+            <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'} ${isMine ? 'animate-message-right' : 'animate-message-left'}`} onContextMenu={(e) => openContextMenu(e, msg)}>
               <div className={`max-w-[75%] md:max-w-[60%] ${isMine ? 'order-1' : ''}`}>
                 {/* Reply preview */}
                 {msg.replyTo && (
@@ -386,29 +411,22 @@ export default function ChatPage() {
         </div>
       )}
 
-      {/* GIF Picker */}
+      {/* GIF Picker — Task 3 */}
       {showGifPicker && (
-        <div className="px-4 py-3 bg-surface-container border-t border-outline-variant/20 h-80 overflow-hidden flex flex-col gif-picker-mobile animate-bottom-sheet">
-          <div className="flex items-center gap-2 mb-2">
-            <input
-              type="text"
-              value={gifQuery}
-              onChange={e => handleGifSearch(e.target.value)}
-              placeholder="Search GIFs..."
-              className="flex-1 bg-surface-container-high rounded-xl px-4 py-2 text-sm text-on-surface"
-              autoFocus
-            />
-            <button onClick={() => setShowGifPicker(false)} className="p-1.5 rounded-lg hover:bg-surface-container-high">
-              <span className="material-symbols-outlined text-on-surface-variant text-lg">close</span>
-            </button>
+        <div className="bg-surface-container border-t border-outline-variant/20 overflow-hidden flex flex-col gif-picker-mobile animate-bottom-sheet" style={{maxHeight:'300px'}}>
+          <div className="flex items-center gap-2 px-3 py-2">
+            <input type="text" value={gifQuery} onChange={e => handleGifSearch(e.target.value)} placeholder="Search GIFs..." className="flex-1 bg-surface-container-high rounded-xl px-4 py-2 text-sm text-on-surface" autoFocus />
+            <button onClick={() => setShowGifPicker(false)} className="p-1.5 rounded-lg hover:bg-surface-container-high"><span className="material-symbols-outlined text-on-surface-variant text-lg">close</span></button>
           </div>
-          <div className="flex-1 overflow-y-auto grid grid-cols-2 gap-2">
-            {gifResults.map(gif => (
-              <button key={gif.id} onClick={() => handleGifSend(gif)} className="rounded-xl overflow-hidden hover:opacity-80 transition-opacity border border-outline-variant/10">
-                <img src={gif.preview || gif.url} alt={gif.title} className="w-full aspect-auto" loading="lazy" />
-              </button>
-            ))}
-            {gifResults.length === 0 && <p className="col-span-2 text-center text-on-surface-variant text-sm py-8">No GIFs found</p>}
+          <div className="flex-1 overflow-y-auto px-2 pb-2">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+              {gifResults.map(gif => (
+                <button key={gif.id} onClick={() => handleGifSend(gif)} className="relative rounded-xl overflow-hidden hover:opacity-80 transition-opacity border border-outline-variant/10 active:scale-95" style={{aspectRatio:'4/3'}} title={gif.title}>
+                  <img src={gif.preview || gif.url} alt={gif.title} className="w-full h-full object-cover" loading="lazy" />
+                </button>
+              ))}
+              {gifResults.length === 0 && <p className="col-span-2 md:col-span-3 text-center text-on-surface-variant text-sm py-8">No GIFs found</p>}
+            </div>
           </div>
         </div>
       )}
@@ -444,86 +462,122 @@ export default function ChatPage() {
         </div>
       )}
 
-      {/* Input Bar */}
-      <div className="px-3 md:px-4 py-2 md:py-3 bg-surface-container-low border-t border-outline-variant/20 flex items-end gap-1.5 md:gap-2 flex-shrink-0 chat-input-mobile">
-        {/* Attach */}
-        <div className="relative">
-          <button onClick={() => setShowAttach(!showAttach)} className="p-2 rounded-xl text-on-surface-variant hover:text-secondary hover:bg-secondary/10 transition-all">
-            <span className="material-symbols-outlined text-xl">add_circle</span>
+      {/* Audio Preview Bar — Task 1 */}
+      {recordState === 'preview' && audioPreviewRef.current && (
+        <div className="audio-preview-bar">
+          <button onClick={discardPreview} className="p-2 rounded-xl text-error hover:bg-error/10 active:scale-95 transition-all">
+            <span className="material-symbols-outlined text-xl">delete</span>
           </button>
-          {showAttach && (
-            <div className="absolute bottom-12 left-0 glass-strong rounded-2xl p-2 w-48 shadow-2xl border border-outline-variant/20 animate-scale-in">
-              {[
-                { icon: 'image', label: 'Image', accept: 'image/*' },
-                { icon: 'videocam', label: 'Video', accept: 'video/*' },
-                { icon: 'mic', label: 'Audio', accept: 'audio/*' },
-                { icon: 'description', label: 'File', accept: '*' },
-              ].map(item => (
-                <label key={item.label} className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors cursor-pointer">
-                  <span className="material-symbols-outlined text-lg">{item.icon}</span>
-                  {item.label}
-                  <input type="file" accept={item.accept} onChange={handleFileUpload} className="hidden" />
-                </label>
-              ))}
-              <button onClick={shareLocation} className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors w-full">
-                <span className="material-symbols-outlined text-lg">location_on</span>Location
+          <audio controls src={URL.createObjectURL(audioPreviewRef.current)} className="flex-1 rounded-xl" style={{height:'36px'}} />
+          <button onClick={sendAudioPreview} className="p-2.5 rounded-xl bg-secondary text-on-secondary hover:scale-105 active:scale-95 transition-all shadow-lg shadow-secondary/30">
+            <span className="material-symbols-outlined text-xl">send</span>
+          </button>
+        </div>
+      )}
+
+      {/* Input Bar — Task 1 recording state / Task 2 mobile layout */}
+      <div className="bg-surface-container-low border-t border-outline-variant/20 flex-shrink-0 chat-input-mobile">
+        {recordState === 'recording' ? (
+          /* Recording active bar */
+          <div className="recording-bar">
+            <button onClick={cancelRecording} className="p-2 rounded-xl text-error hover:bg-error/10 active:scale-95 transition-all">
+              <span className="material-symbols-outlined text-xl">close</span>
+            </button>
+            <div className="recording-dot" />
+            <span className="recording-timer">{formatRecordTime(recordTime)}</span>
+            <span className="text-on-surface-variant text-sm flex-1">Recording...</span>
+            <button onClick={stopRecordingForPreview} className="p-2.5 rounded-xl bg-secondary text-on-secondary hover:scale-105 active:scale-95 transition-all shadow-lg shadow-secondary/30">
+              <span className="material-symbols-outlined text-xl">check</span>
+            </button>
+          </div>
+        ) : recordState === 'idle' ? (
+          /* Normal input — desktop: single row, mobile: input+send on top, toolbar below */
+          <div>
+            <div className="flex items-end gap-1.5 md:gap-2 px-3 md:px-4 py-2 md:py-3">
+              {/* Desktop-only: attach, emoji, gif before input */}
+              <div className="hidden md:flex items-center gap-0.5">
+                <div className="relative">
+                  <button onClick={() => setShowAttach(!showAttach)} className="p-2 rounded-xl text-on-surface-variant hover:text-secondary hover:bg-secondary/10 transition-all active:scale-95">
+                    <span className="material-symbols-outlined text-xl">add_circle</span>
+                  </button>
+                  {showAttach && (
+                    <div className="absolute bottom-12 left-0 glass-strong rounded-2xl p-2 w-48 shadow-2xl border border-outline-variant/20 animate-scale-in">
+                      {[{icon:'image',label:'Image',accept:'image/*'},{icon:'videocam',label:'Video',accept:'video/*'},{icon:'mic',label:'Audio',accept:'audio/*'},{icon:'description',label:'File',accept:'*'}].map(item => (
+                        <label key={item.label} className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors cursor-pointer">
+                          <span className="material-symbols-outlined text-lg">{item.icon}</span>{item.label}
+                          <input type="file" accept={item.accept} onChange={handleFileUpload} className="hidden" />
+                        </label>
+                      ))}
+                      <button onClick={shareLocation} className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors w-full">
+                        <span className="material-symbols-outlined text-lg">location_on</span>Location
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <button onClick={() => { setShowEmojiPicker(!showEmojiPicker); setShowGifPicker(false) }} className="p-2 rounded-xl text-on-surface-variant hover:text-secondary hover:bg-secondary/10 transition-all active:scale-95">
+                  <span className="material-symbols-outlined text-xl">mood</span>
+                </button>
+                <button onClick={() => { setShowGifPicker(!showGifPicker); setShowEmojiPicker(false) }} className="p-2 rounded-xl text-on-surface-variant hover:text-secondary hover:bg-secondary/10 transition-all active:scale-95">
+                  <span className="material-symbols-outlined text-xl">gif_box</span>
+                </button>
+              </div>
+
+              {/* Text input — full width on mobile */}
+              <div className="flex-1 relative">
+                <textarea ref={inputRef} value={text} onChange={handleTextChange} onKeyDown={handleKeyDown} placeholder="Type a message..." rows={1}
+                  className="w-full bg-surface-container-high border border-outline-variant/30 rounded-2xl px-4 py-2.5 text-sm text-on-surface resize-none focus:border-secondary/50 focus:shadow-[0_0_0_2px_rgba(0,228,117,0.1)] transition-all max-h-24"
+                  style={{ minHeight: '44px' }} />
+              </div>
+
+              {/* Upload indicator */}
+              {uploading && (
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-container-high border border-outline-variant/30 rounded-xl animate-pulse">
+                  <div className="w-4 h-4 border-2 border-secondary border-t-transparent rounded-full animate-spin flex-shrink-0" />
+                  <span className="text-xs font-medium text-secondary hidden md:inline">Uploading...</span>
+                </div>
+              )}
+
+              {/* Mic / Send — swap dynamically */}
+              {text.trim() ? (
+                <button onClick={handleSend} className="p-2.5 rounded-xl bg-secondary text-on-secondary hover:scale-105 active:scale-95 transition-transform shadow-lg shadow-secondary/30">
+                  <span className="material-symbols-outlined text-xl">send</span>
+                </button>
+              ) : (
+                <button onClick={startRecording} className="p-2.5 rounded-xl text-on-surface-variant hover:text-secondary hover:bg-secondary/10 transition-all active:scale-95">
+                  <span className="material-symbols-outlined text-xl">mic</span>
+                </button>
+              )}
+            </div>
+
+            {/* Mobile-only toolbar below input — Task 2 */}
+            <div className="md:hidden input-toolbar-mobile">
+              <div className="relative">
+                <button onClick={() => setShowAttach(!showAttach)} className="text-on-surface-variant hover:text-secondary">
+                  <span className="material-symbols-outlined">add_circle</span>
+                </button>
+                {showAttach && (
+                  <div className="absolute bottom-10 left-0 glass-strong rounded-2xl p-2 w-48 shadow-2xl border border-outline-variant/20 animate-scale-in z-50">
+                    {[{icon:'image',label:'Image',accept:'image/*'},{icon:'videocam',label:'Video',accept:'video/*'},{icon:'mic',label:'Audio',accept:'audio/*'},{icon:'description',label:'File',accept:'*'}].map(item => (
+                      <label key={item.label} className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors cursor-pointer">
+                        <span className="material-symbols-outlined text-lg">{item.icon}</span>{item.label}
+                        <input type="file" accept={item.accept} onChange={handleFileUpload} className="hidden" />
+                      </label>
+                    ))}
+                    <button onClick={shareLocation} className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors w-full">
+                      <span className="material-symbols-outlined text-lg">location_on</span>Location
+                    </button>
+                  </div>
+                )}
+              </div>
+              <button onClick={() => { setShowEmojiPicker(!showEmojiPicker); setShowGifPicker(false) }} className="text-on-surface-variant hover:text-secondary">
+                <span className="material-symbols-outlined">mood</span>
+              </button>
+              <button onClick={() => { setShowGifPicker(!showGifPicker); setShowEmojiPicker(false) }} className="text-on-surface-variant hover:text-secondary">
+                <span className="material-symbols-outlined">gif_box</span>
               </button>
             </div>
-          )}
-        </div>
-
-        {/* Emoji */}
-        <button onClick={() => { setShowEmojiPicker(!showEmojiPicker); setShowGifPicker(false) }} className="p-2 rounded-xl text-on-surface-variant hover:text-secondary hover:bg-secondary/10 transition-all">
-          <span className="material-symbols-outlined text-xl">mood</span>
-        </button>
-
-        {/* GIF */}
-        <button onClick={() => { setShowGifPicker(!showGifPicker); setShowEmojiPicker(false) }} className="p-2 rounded-xl text-on-surface-variant hover:text-secondary hover:bg-secondary/10 transition-all">
-          <span className="material-symbols-outlined text-xl">gif_box</span>
-        </button>
-
-        {/* Text input */}
-        <div className="flex-1 relative">
-          <textarea
-            ref={inputRef}
-            value={text}
-            onChange={handleTextChange}
-            onKeyDown={handleKeyDown}
-            placeholder="Type a message..."
-            rows={1}
-            className="w-full bg-surface-container-high border border-outline-variant/30 rounded-2xl px-4 py-2.5 text-sm text-on-surface resize-none focus:border-secondary/50 focus:shadow-[0_0_0_2px_rgba(0,228,117,0.1)] transition-all max-h-24"
-            style={{ minHeight: '40px' }}
-          />
-        </div>
-
-        {/* Upload indicator */}
-        {uploading && (
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-container-high border border-outline-variant/30 rounded-xl mr-1 animate-pulse">
-            <div className="w-4 h-4 border-2 border-secondary border-t-transparent rounded-full animate-spin flex-shrink-0" />
-            <span className="text-xs font-medium text-secondary truncate">Uploading media, please wait...</span>
           </div>
-        )}
-
-        {/* Mic */}
-        <button
-          onMouseDown={startRecording}
-          onMouseUp={stopRecording}
-          onTouchStart={startRecording}
-          onTouchEnd={stopRecording}
-          className={`p-2.5 rounded-xl transition-all ${recording ? 'bg-error text-white animate-pulse scale-110' : 'text-on-surface-variant hover:text-secondary hover:bg-secondary/10'}`}
-          title="Hold to record audio"
-        >
-          <span className="material-symbols-outlined text-xl">{recording ? 'stop' : 'mic'}</span>
-        </button>
-
-        {/* Send */}
-        <button
-          onClick={handleSend}
-          disabled={!text.trim() && !uploading}
-          className="p-2.5 rounded-xl bg-secondary text-on-secondary hover:scale-105 transition-transform shadow-lg shadow-secondary/30 disabled:opacity-30 disabled:shadow-none disabled:scale-100"
-        >
-          <span className="material-symbols-outlined text-xl">send</span>
-        </button>
+        ) : null}
       </div>
 
       {/* Context Menu */}

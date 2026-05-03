@@ -71,6 +71,9 @@ export default {
         'page-enter': 'page-enter 0.4s cubic-bezier(0.22, 1, 0.36, 1)',
         'slide-in-right': 'slide-in-right 0.35s cubic-bezier(0.22, 1, 0.36, 1)',
         'bottom-sheet': 'bottom-sheet 0.3s cubic-bezier(0.22, 1, 0.36, 1)',
+        'message-right': 'message-in-right 0.2s ease-out both',
+        'message-left': 'message-in-left 0.2s ease-out both',
+        'recording-ring': 'recording-ring 1s ease-in-out infinite',
       },
       keyframes: {
         'bounce-slow': {
@@ -130,6 +133,18 @@ export default {
         'bottom-sheet': {
           '0%': { opacity: '0', transform: 'translateY(100%)' },
           '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+        'message-in-right': {
+          '0%': { opacity: '0', transform: 'translateX(20px) scale(0.95)' },
+          '100%': { opacity: '1', transform: 'translateX(0) scale(1)' },
+        },
+        'message-in-left': {
+          '0%': { opacity: '0', transform: 'translateX(-20px) scale(0.95)' },
+          '100%': { opacity: '1', transform: 'translateX(0) scale(1)' },
+        },
+        'recording-ring': {
+          '0%, 100%': { boxShadow: '0 0 0 0 rgba(253, 111, 133, 0.4)' },
+          '50%': { boxShadow: '0 0 0 10px rgba(253, 111, 133, 0)' },
         },
       },
     },
