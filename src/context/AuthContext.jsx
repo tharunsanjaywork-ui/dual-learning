@@ -35,51 +35,51 @@ export function AuthProvider({ children }) {
       if (isSwitching.current) return
 
       if (firebaseUser) {
-        // Check if we have a session token — if not, this is a stale auth state after tab reopen
-        const sessionToken = sessionStorage.getItem('dz_token')
-        if (!sessionToken) {
-          // No session token means tab was closed and reopened — force login
-          await signOut(auth).catch(() => {})
-          setUser(null)
-          setUserProfile(null)
-          setMode(null)
-          setLoading(false)
-          return
-        }
-
         setUser(firebaseUser)
 
-        // Restore mode from sessionStorage
-        const savedMode = sessionStorage.getItem('dz_mode')
+        // Restore mode from sessionStorage first, then localStorage fallback
+        const savedMode = sessionStorage.getItem('dz_mode') || localStorage.getItem('dz_mode')
 
         // Fetch profile from Firestore
-        const profileDoc = await getDoc(doc(db, 'users', firebaseUser.uid))
-        if (profileDoc.exists()) {
-          setUserProfile({ id: profileDoc.id, ...profileDoc.data() })
-        } else {
-          // Try to find by studyAccountUid or messengerAccountUid
-          const allUsers = await getDocs(collection(db, 'users'))
-          const found = allUsers.docs.find(d =>
-            d.data().studyAccountUid === firebaseUser.uid ||
-            d.data().messengerAccountUid === firebaseUser.uid
-          )
-          if (found) {
-            setUserProfile({ id: found.id, ...found.data() })
+        try {
+          const profileDoc = await getDoc(doc(db, 'users', firebaseUser.uid))
+          if (profileDoc.exists()) {
+            setUserProfile({ id: profileDoc.id, ...profileDoc.data() })
+          } else {
+            // Try to find by studyAccountUid or messengerAccountUid
+            const q = query(collection(db, 'users'), where('studyAccountUid', '==', firebaseUser.uid))
+            const snap = await getDocs(q)
+            if (!snap.empty) {
+              setUserProfile({ id: snap.docs[0].id, ...snap.docs[0].data() })
+            } else {
+              const q2 = query(collection(db, 'users'), where('messengerAccountUid', '==', firebaseUser.uid))
+              const snap2 = await getDocs(q2)
+              if (!snap2.empty) {
+                setUserProfile({ id: snap2.docs[0].id, ...snap2.docs[0].data() })
+              }
+            }
           }
+        } catch (err) {
+          console.error('Failed to fetch profile:', err)
         }
 
         // Restore mode
         if (savedMode) {
           setMode(savedMode)
+          // Sync both storages
+          sessionStorage.setItem('dz_mode', savedMode)
+          localStorage.setItem('dz_mode', savedMode)
         } else {
           // Determine mode from email
           const email = firebaseUser.email || ''
           if (email.includes('_secret@')) {
             setMode('messenger')
             sessionStorage.setItem('dz_mode', 'messenger')
+            localStorage.setItem('dz_mode', 'messenger')
           } else if (email.includes('@dualzone.app')) {
             setMode('study')
             sessionStorage.setItem('dz_mode', 'study')
+            localStorage.setItem('dz_mode', 'study')
           }
         }
       } else {
@@ -197,6 +197,7 @@ export function AuthProvider({ children }) {
       const token = await cred.user.getIdToken()
       sessionStorage.setItem('dz_token', token)
       sessionStorage.setItem('dz_mode', 'study')
+      localStorage.setItem('dz_mode', 'study')
 
       setMode('study')
       return { mode: 'study' }
@@ -218,6 +219,7 @@ export function AuthProvider({ children }) {
         const token = await cred.user.getIdToken()
         sessionStorage.setItem('dz_token', token)
         sessionStorage.setItem('dz_mode', 'messenger')
+        localStorage.setItem('dz_mode', 'messenger')
 
         setMode('messenger')
         return { mode: 'messenger' }
@@ -250,6 +252,7 @@ export function AuthProvider({ children }) {
       const token = await cred.user.getIdToken()
       sessionStorage.setItem('dz_token', token)
       sessionStorage.setItem('dz_mode', 'messenger')
+      localStorage.setItem('dz_mode', 'messenger')
 
       setMode('messenger')
     } finally {
@@ -267,6 +270,7 @@ export function AuthProvider({ children }) {
       // We can't re-auth without the study password, so just change mode
       // The user is still authenticated and Firestore profile is preserved
       sessionStorage.setItem('dz_mode', 'study')
+      localStorage.setItem('dz_mode', 'study')
       setMode('study')
     } finally {
       isSwitching.current = false
@@ -280,6 +284,7 @@ export function AuthProvider({ children }) {
     }
     sessionStorage.removeItem('dz_token')
     sessionStorage.removeItem('dz_mode')
+    localStorage.removeItem('dz_mode')
     setMode(null)
     setUserProfile(null)
     await signOut(auth)
