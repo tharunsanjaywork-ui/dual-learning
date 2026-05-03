@@ -196,3 +196,49 @@ input:focus, textarea:focus, select:focus, button:focus-visible {
 .animate-story-progress {
   animation: story-progress 5s linear forwards;
 }
+
+/* ===== MOBILE OPTIMIZATIONS ===== */
+
+/* Fix mobile viewport height (accounts for browser chrome) */
+@supports (height: 100dvh) {
+  .min-h-screen {
+    min-height: 100dvh !important;
+  }
+}
+
+/* Safe area insets for phones with notch/dynamic island */
+.fixed.bottom-0 {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Prevent iOS text zoom on input focus */
+@media screen and (max-width: 768px) {
+  input, textarea, select {
+    font-size: 16px !important;
+  }
+}
+
+/* Improve touch targets on mobile */
+@media (pointer: coarse) {
+  button, a, [role="button"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+/* Disable pull-to-refresh on Android Chrome */
+html {
+  overscroll-behavior-y: contain;
+}
+
+/* Smooth momentum scrolling on iOS */
+.overflow-y-auto, .overflow-x-auto {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Fix 100vh on mobile browsers */
+@supports (-webkit-touch-callout: none) {
+  .h-screen {
+    height: -webkit-fill-available !important;
+  }
+}
