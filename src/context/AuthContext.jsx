@@ -27,12 +27,13 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true)
 
   const isSwitching = useRef(false)
+  const isLoggingIn = useRef(false)
 
   // Listen to Firebase Auth state
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
-      // Skip auth state changes during mode switching
-      if (isSwitching.current) return
+      // Skip auth state changes during mode switching or active login
+      if (isSwitching.current || isLoggingIn.current) return
 
       if (firebaseUser) {
         setUser(firebaseUser)
@@ -180,12 +181,16 @@ export function AuthProvider({ children }) {
     const userData = userDoc.data()
     const firestoreId = userDoc.id
 
+    // Prevent onAuthStateChanged from interfering during login
+    isLoggingIn.current = true
+
     // Try study password first (Firebase Auth)
     try {
       const cred = await signInWithEmailAndPassword(auth, email, password)
       const profile = { id: firestoreId, ...userData }
       setUserProfile(profile)
       setUser(cred.user)
+      setLoading(false)
 
       await setDoc(doc(db, 'users', firestoreId), { isOnline: true, lastSeen: serverTimestamp() }, { merge: true })
 
@@ -200,6 +205,10 @@ export function AuthProvider({ children }) {
       localStorage.setItem('dz_mode', 'study')
 
       setMode('study')
+
+      // Allow onAuthStateChanged to work again after a delay
+      setTimeout(() => { isLoggingIn.current = false }, 2000)
+
       return { mode: 'study' }
     } catch {
       // Study password failed, try messenger password (Firebase Auth with secret email)
@@ -208,6 +217,7 @@ export function AuthProvider({ children }) {
         const profile = { id: firestoreId, ...userData }
         setUserProfile(profile)
         setUser(cred.user)
+        setLoading(false)
 
         await setDoc(doc(db, 'users', firestoreId), { isOnline: true, lastSeen: serverTimestamp() }, { merge: true })
 
@@ -222,8 +232,13 @@ export function AuthProvider({ children }) {
         localStorage.setItem('dz_mode', 'messenger')
 
         setMode('messenger')
+
+        // Allow onAuthStateChanged to work again after a delay
+        setTimeout(() => { isLoggingIn.current = false }, 2000)
+
         return { mode: 'messenger' }
       } catch {
+        isLoggingIn.current = false
         // Both failed - don't reveal which password is which
         throw new Error('Incorrect password, try again')
       }
