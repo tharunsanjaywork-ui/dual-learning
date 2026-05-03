@@ -70,18 +70,23 @@ export default function SearchPage() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-6">
-      {/* Search Bar */}
-      <div className="relative mb-6">
-        <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-outline text-xl">search</span>
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={e => setSearchQuery(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && handleSearch()}
-          placeholder="Discover new perspectives..."
-          className="w-full bg-surface-container-high border border-outline-variant/30 rounded-full pl-12 pr-4 py-3.5 text-on-surface text-sm focus:border-secondary/50 focus:ring-2 focus:ring-secondary/20 transition-all"
-        />
+    <div className="max-w-2xl mx-auto px-4 py-6 animate-page-enter">
+      {/* Back + Search Bar */}
+      <div className="flex items-center gap-2 mb-6">
+        <button onClick={() => navigate(-1)} className="page-back-btn flex-shrink-0">
+          <span className="material-symbols-outlined text-on-surface">arrow_back</span>
+        </button>
+        <div className="relative flex-1">
+          <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-outline text-xl">search</span>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleSearch()}
+            placeholder="Discover new perspectives..."
+            className="w-full bg-surface-container-high border border-outline-variant/30 rounded-full pl-12 pr-4 py-3.5 text-on-surface text-sm focus:border-secondary/50 focus:ring-2 focus:ring-secondary/20 transition-all"
+          />
+        </div>
       </div>
 
       {/* Filter Pills */}

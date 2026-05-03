@@ -2,10 +2,12 @@ import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { db } from '../../lib/firebase'
 import { collection, query, where, onSnapshot, addDoc, serverTimestamp, updateDoc, doc, arrayUnion, deleteDoc, getDocs, getDoc } from 'firebase/firestore'
+import { useNavigate } from 'react-router-dom'
 import { uploadToCloudinary } from '../../lib/cloudinary'
 
 export default function StoriesPage() {
   const { userProfile } = useAuth()
+  const navigate = useNavigate()
   const [stories, setStories] = useState([])
   const [viewingStory, setViewingStory] = useState(null)
   const [viewIdx, setViewIdx] = useState(0)
@@ -149,8 +151,13 @@ export default function StoriesPage() {
   const currentGroup = viewingStory !== null ? stories[viewingStory] : null
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-6">
-      <h1 className="font-headline text-2xl font-bold text-on-surface mb-6">Stories</h1>
+    <div className="max-w-3xl mx-auto px-4 py-6 animate-page-enter">
+      <div className="flex items-center gap-3 mb-6">
+        <button onClick={() => navigate(-1)} className="page-back-btn">
+          <span className="material-symbols-outlined text-on-surface">arrow_back</span>
+        </button>
+        <h1 className="font-headline text-2xl font-bold text-on-surface">Stories</h1>
+      </div>
 
       {/* Upload */}
       <div className="flex items-center gap-4 mb-8">

@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { db } from '../../lib/firebase'
-import { collection, query, where, onSnapshot, updateDoc, doc } from 'firebase/firestore'
+import { collection, query, where, onSnapshot, updateDoc, doc, arrayUnion, arrayRemove } from 'firebase/firestore'
 import { useNavigate } from 'react-router-dom'
 
 export default function NotificationsPage() {
-  const { userProfile } = useAuth()
+  const { userProfile, setUserProfile } = useAuth()
   const navigate = useNavigate()
   const [notifications, setNotifications] = useState([])
+  const [followedBack, setFollowedBack] = useState({})
 
   useEffect(() => {
     if (!userProfile?.id) return
@@ -28,10 +29,43 @@ export default function NotificationsPage() {
     return unsub
   }, [userProfile?.id])
 
+  // Initialize followedBack state from current following list
+  useEffect(() => {
+    if (!userProfile?.following) return
+    const state = {}
+    userProfile.following.forEach(id => { state[id] = true })
+    setFollowedBack(state)
+  }, [userProfile?.following])
+
   const markAllRead = async () => {
     const unread = notifications.filter(n => !n.read)
     for (const n of unread) {
       await updateDoc(doc(db, 'notifications', n.id), { read: true })
+    }
+  }
+
+  const handleFollowBack = async (userId, fromName) => {
+    if (!userProfile?.id || !userId) return
+    const isCurrentlyFollowing = followedBack[userId]
+    const myRef = doc(db, 'users', userProfile.id)
+    const theirRef = doc(db, 'users', userId)
+
+    try {
+      if (isCurrentlyFollowing) {
+        // Unfollow
+        await updateDoc(myRef, { following: arrayRemove(userId) })
+        await updateDoc(theirRef, { followers: arrayRemove(userProfile.id) })
+        setFollowedBack(prev => ({ ...prev, [userId]: false }))
+        setUserProfile(prev => ({ ...prev, following: (prev.following || []).filter(id => id !== userId) }))
+      } else {
+        // Follow back
+        await updateDoc(myRef, { following: arrayUnion(userId) })
+        await updateDoc(theirRef, { followers: arrayUnion(userProfile.id) })
+        setFollowedBack(prev => ({ ...prev, [userId]: true }))
+        setUserProfile(prev => ({ ...prev, following: [...(prev.following || []), userId] }))
+      }
+    } catch (err) {
+      console.error('Follow action failed:', err)
     }
   }
 
@@ -42,14 +76,14 @@ export default function NotificationsPage() {
   const otherNotifs = notifications.filter(n => !['follow_request', 'group_invite', 'story_reaction', 'follow'].includes(n.type))
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-6">
+    <div className="max-w-2xl mx-auto px-4 py-6 animate-page-enter">
       {/* Header */}
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex items-center justify-between mb-6 md:mb-8">
         <div className="flex items-center gap-3">
-          <button onClick={() => navigate('/messenger/chats')} className="w-10 h-10 rounded-full hover:bg-surface-container-high flex items-center justify-center transition-colors">
+          <button onClick={() => navigate('/messenger/chats')} className="page-back-btn">
             <span className="material-symbols-outlined text-on-surface">arrow_back</span>
           </button>
-          <h1 className="font-headline text-3xl md:text-5xl font-bold text-on-surface" style={{ fontStyle: 'italic' }}>Notifications</h1>
+          <h1 className="font-headline text-2xl md:text-5xl font-bold text-on-surface" style={{ fontStyle: 'italic' }}>Notifications</h1>
         </div>
         <button onClick={markAllRead} className="text-secondary text-sm font-medium hover:underline flex-shrink-0">Mark all as read</button>
       </div>
@@ -146,18 +180,34 @@ export default function NotificationsPage() {
                 <span className="material-symbols-outlined text-base">group_add</span>New Followers
               </h3>
               <div className="bg-surface-container border border-outline-variant/20 rounded-2xl divide-y divide-outline-variant/10">
-                {newFollowers.map(n => (
-                  <div key={n.id} className="flex items-center gap-3 px-4 py-3">
-                    <div className="w-10 h-10 rounded-full bg-surface-container-highest flex items-center justify-center flex-shrink-0">
-                      <span className="material-symbols-outlined text-outline text-base">person</span>
+                {newFollowers.map(n => {
+                  const fromId = n.data?.fromId
+                  const isFollowing = followedBack[fromId]
+                  return (
+                    <div key={n.id} className="flex items-center gap-3 px-4 py-3">
+                      <button
+                        onClick={() => fromId && navigate(`/messenger/profile/${fromId}`)}
+                        className="w-10 h-10 rounded-full bg-surface-container-highest flex items-center justify-center flex-shrink-0"
+                      >
+                        <span className="material-symbols-outlined text-outline text-base">person</span>
+                      </button>
+                      <p className="text-on-surface text-sm flex-1">
+                        <span className="font-medium">{n.data?.fromName || 'Someone'}</span>
+                        <span className="text-on-surface-variant"> started following you</span>
+                      </p>
+                      <button
+                        onClick={() => handleFollowBack(fromId, n.data?.fromName)}
+                        className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${
+                          isFollowing
+                            ? 'bg-surface-container-highest text-on-surface-variant hover:bg-surface-bright'
+                            : 'bg-secondary text-on-secondary hover:scale-105'
+                        }`}
+                      >
+                        {isFollowing ? 'Following ✓' : 'Follow Back'}
+                      </button>
                     </div>
-                    <p className="text-on-surface text-sm flex-1">
-                      <span className="font-medium">{n.data?.fromName || 'Someone'}</span>
-                      <span className="text-on-surface-variant"> started following you</span>
-                    </p>
-                    <button className="px-4 py-1.5 rounded-full bg-secondary text-on-secondary text-xs font-bold hover:scale-105 transition-transform">Follow Back</button>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </section>
           )}

@@ -23,6 +23,17 @@ export default function EditProfilePage() {
   const handlePicChange = (e) => {
     const file = e.target.files[0]
     if (!file) return
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      setError('Please select an image file (JPG, PNG, etc.)')
+      return
+    }
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      setError('Image must be under 5MB')
+      return
+    }
+    setError('')
     setProfilePicFile(file)
     const reader = new FileReader()
     reader.onloadend = () => setPreview(reader.result)
@@ -58,8 +69,14 @@ export default function EditProfilePage() {
   }
 
   return (
-    <div className="max-w-lg mx-auto px-4 py-8">
-      <h1 className="font-headline text-2xl font-bold text-on-surface mb-8">Edit Profile</h1>
+    <div className="max-w-lg mx-auto px-4 py-6 md:py-8 animate-page-enter">
+      {/* Header with back button */}
+      <div className="flex items-center gap-3 mb-8">
+        <button onClick={() => navigate(-1)} className="page-back-btn">
+          <span className="material-symbols-outlined text-on-surface">arrow_back</span>
+        </button>
+        <h1 className="font-headline text-2xl font-bold text-on-surface">Edit Profile</h1>
+      </div>
 
       {/* Profile Picture */}
       <div className="flex flex-col items-center mb-8">

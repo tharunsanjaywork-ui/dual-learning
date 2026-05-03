@@ -7,12 +7,19 @@ import { doc, getDoc } from 'firebase/firestore'
 import { uploadToCloudinary, uploadBlobToCloudinary, getFileType } from '../../lib/cloudinary'
 import { searchGifs } from '../../lib/giphy'
 
-const EMOJIS = [
-  '😀', '😂', '🥹', '😍', '🥰', '😘', '😎', '🤩', '🥳', '😇',
-  '🙂', '🤔', '😏', '😌', '🥺', '😢', '😭', '😤', '🤯', '😱',
-  '🤗', '👋', '👍', '👎', '👏', '🙌', '🤝', '❤️', '🔥', '⭐',
-  '💯', '✅', '🎉', '🏆', '💪', '🙏', '📚', '✨', '💡', '🎯',
-]
+const EMOJI_CATEGORIES = {
+  '😀': { name: 'Smileys', emojis: ['😀','😃','😄','😁','😆','😅','🤣','😂','🙂','🙃','😉','😊','😇','🥰','😍','🤩','😘','😗','😚','😙','🥲','😋','😛','😜','🤪','😝','🤑','🤗','🤭','🤫','🤔','🫡','🤐','🤨','😐','😑','😶','🫥','😏','😒','🙄','😬','🤥','😌','😔','😪','🤤','😴','😷','🤒','🤕','🤢','🤮','🥵','🥶','🥴','😵','🤯','🤠','🥳','🥸','😎','🤓','🧐','😕','🫤','😟','🙁','😮','😯','😲','😳','🥺','🥹','😦','😧','😨','😰','😥','😢','😭','😱','😖','😣','😞','😓','😩','😫','🥱','😤','😡','😠','🤬','😈','👿','💀','☠️','💩','🤡','👹','👺','👻','👽','👾','🤖'] },
+  '👋': { name: 'Gestures', emojis: ['👋','🤚','🖐️','✋','🖖','🫱','🫲','🫳','🫴','👌','🤌','🤏','✌️','🤞','🫰','🤟','🤘','🤙','👈','👉','👆','🖕','👇','☝️','🫵','👍','👎','✊','👊','🤛','🤜','👏','🙌','🫶','👐','🤲','🤝','🙏','✍️','💅','🤳','💪','🦾','🦿','🦵','🦶','👂','🦻','👃','🧠','🫀','🫁','🦷','🦴','👀','👁️','👅','👄'] },
+  '❤️': { name: 'Hearts', emojis: ['❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❤️‍🔥','❤️‍🩹','❣️','💕','💞','💓','💗','💖','💘','💝','💟','♥️','🫶','😍','🥰','😘','💋','💏','💑'] },
+  '🐶': { name: 'Animals', emojis: ['🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐻‍❄️','🐨','🐯','🦁','🐮','🐷','🐸','🐵','🙈','🙉','🙊','🐒','🐔','🐧','🐦','🐤','🐣','🐥','🦆','🦅','🦉','🦇','🐺','🐗','🐴','🦄','🐝','🪱','🐛','🦋','🐌','🐞','🐜','🪰','🪲','🪳','🦟','🦗','🕷️','🦂','🐢','🐍','🦎','🦖','🦕','🐙','🦑','🦐','🦞','🦀','🐡','🐠','🐟','🐬','🐳','🐋','🦈','🐊','🐅','🐆','🦓','🦍','🦧','🐘','🦛','🦏','🐪','🐫','🦒','🦘','🦬','🐃','🐂','🐄','🐎','🐖','🐏','🐑','🦙','🐐','🦌','🐕','🐩','🦮','🐕‍🦺','🐈','🐈‍⬛','🪶','🐓','🦃','🦤','🦚','🦜','🦢','🦩','🕊️','🐇','🦝','🦨','🦡','🦫','🦦','🦥','🐁','🐀','🐿️','🦔'] },
+  '🍔': { name: 'Food', emojis: ['🍏','🍎','🍐','🍊','🍋','🍌','🍉','🍇','🍓','🫐','🍈','🍒','🍑','🥭','🍍','🥥','🥝','🍅','🍆','🥑','🥦','🥬','🥒','🌶️','🫑','🌽','🥕','🫒','🧄','🧅','🥔','🍠','🥐','🥯','🍞','🥖','🥨','🧀','🥚','🍳','🧈','🥞','🧇','🥓','🥩','🍗','🍖','🦴','🌭','🍔','🍟','🍕','🫓','🥪','🥙','🧆','🌮','🌯','🫔','🥗','🥘','🫕','🥫','🍝','🍜','🍲','🍛','🍣','🍱','🥟','🦪','🍤','🍙','🍚','🍘','🍥','🥠','🥮','🍢','🍡','🍧','🍨','🍦','🥧','🧁','🍰','🎂','🍮','🍭','🍬','🍫','🍿','🍩','🍪','🌰','🥜','🍯','🥛','🍼','🫖','☕','🍵','🧃','🥤','🧋','🍶','🍺','🍻','🥂','🍷','🥃','🍸','🍹','🧉','🍾','🧊'] },
+  '⚽': { name: 'Activities', emojis: ['⚽','🏀','🏈','⚾','🥎','🎾','🏐','🏉','🥏','🎱','🪀','🏓','🏸','🏒','🏑','🥍','🏏','🪃','🥅','⛳','🪁','🏹','🎣','🤿','🥊','🥋','🎽','🛹','🛼','🛷','⛸️','🥌','🎿','⛷️','🏂','🪂','🏋️','🤼','🤸','🤺','⛹️','🤾','🏌️','🏇','🧘','🏄','🏊','🤽','🚣','🧗','🚵','🚴','🎪','🎨','🎭','🎤','🎧','🎼','🎹','🥁','🪘','🎷','🎺','🪗','🎸','🪕','🎻','🎬','🎮','🕹️','🎲','🧩','🎯','🎳','🎰','🎗️','🏅','🥇','🥈','🥉','🏆','📚','✏️','📝','📖'] },
+  '🚗': { name: 'Travel', emojis: ['🚗','🚕','🚙','🚌','🚎','🏎️','🚓','🚑','🚒','🚐','🛻','🚚','🚛','🚜','🏍️','🛵','🚲','🛴','🛺','🚔','🚍','🚘','🚖','✈️','🛫','🛬','🛩️','🚀','🛸','🚁','🛶','⛵','🚤','🛥️','🛳️','⛴️','🚢','🏠','🏡','🏘️','🏢','🏣','🏤','🏥','🏦','🏨','🏪','🏫','🏬','🏭','🏯','🏰','💒','🗼','🗽','⛪','🕌','🛕','🕍','⛩️','🕋','⛲','⛺','🌁','🌃','🏙️','🌄','🌅','🌆','🌇','🌉','🎠','🛝','🎡','🎢','💈','🎪','🗺️','🧭','⛰️','🏔️','🌋','🗻','🏕️','🏖️','🏜️','🏝️','🏞️'] },
+  '💡': { name: 'Objects', emojis: ['💡','🔦','🕯️','📱','💻','⌨️','🖥️','🖨️','🖱️','💾','💿','📀','📷','📸','📹','🎥','📽️','📺','📻','🎙️','🎚️','🎛️','⏰','⏱️','⏳','📡','🔋','🔌','💰','💵','💴','💶','💷','💳','💎','⚖️','🪜','🧰','🪛','🔧','🔨','⚒️','🛠️','🗡️','⚔️','💣','🪃','🏹','🛡️','🪚','🔩','⚙️','🗜️','🔑','🗝️','🔒','🔓','📦','📫','📬','📮','✉️','📧','📪','🗳️','🏷️','🔖','📎','🖇️','📐','📏','📌','📍','✂️','🗑️','🖊️','🖋️','✒️','📝','📁','📂','🗂️','📅','📆','📇','📈','📉','📊','📋','🗒️','🗓️'] },
+  '✨': { name: 'Symbols', emojis: ['✨','⭐','🌟','💫','⚡','🔥','💥','🎆','🎇','🌈','☀️','🌤️','⛅','🌥️','☁️','🌦️','🌧️','⛈️','🌩️','❄️','☃️','⛄','🌊','💧','💦','☔','🎵','🎶','🔔','🔕','📣','📢','💬','💭','🗯️','♠️','♣️','♥️','♦️','🃏','🎴','🀄','🔇','🔈','🔉','🔊','📯','🔔','💤','💢','💬','🔰','⚜️','🔱','📛','🔰','♻️','✅','❎','❌','⭕','❗','❕','❓','❔','‼️','⁉️','💯','🔴','🟠','🟡','🟢','🔵','🟣','🟤','⚫','⚪','🟥','🟧','🟨','🟩','🟦','🟪','🟫','⬛','⬜','◼️','◻️','🔶','🔷','🔸','🔹','▪️','▫️','💠','🔘','🔳','🔲'] },
+  '🏁': { name: 'Flags', emojis: ['🏁','🚩','🎌','🏴','🏳️','🏳️‍🌈','🏳️‍⚧️','🏴‍☠️','🇮🇳','🇺🇸','🇬🇧','🇨🇦','🇦🇺','🇯🇵','🇰🇷','🇨🇳','🇫🇷','🇩🇪','🇮🇹','🇪🇸','🇧🇷','🇲🇽','🇷🇺','🇸🇦','🇦🇪','🇸🇬','🇹🇭','🇻🇳','🇮🇩','🇵🇭','🇲🇾','🇳🇬','🇿🇦','🇪🇬','🇰🇪','🇬🇭','🇵🇰','🇧🇩','🇱🇰','🇳🇵','🇹🇷','🇳🇱','🇧🇪','🇨🇭','🇦🇹','🇸🇪','🇳🇴','🇩🇰','🇫🇮','🇵🇱','🇵🇹','🇬🇷','🇮🇪','🇳🇿','🇦🇷','🇨🇴','🇨🇱','🇵🇪'] },
+}
+const EMOJI_KEYS = Object.keys(EMOJI_CATEGORIES)
 
 export default function ChatPage() {
   const { chatId } = useParams()
@@ -29,6 +36,7 @@ export default function ChatPage() {
   const [otherUser, setOtherUser] = useState(null)
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
   const [showGifPicker, setShowGifPicker] = useState(false)
+  const [emojiCategory, setEmojiCategory] = useState(EMOJI_KEYS[0])
   const [gifResults, setGifResults] = useState([])
   const [gifQuery, setGifQuery] = useState('')
   const [showAttach, setShowAttach] = useState(false)
@@ -276,10 +284,10 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-3.5rem)] md:h-[calc(100vh-4rem)]">
+    <div className="flex flex-col h-[calc(100vh-3.5rem)] md:h-[calc(100vh-4rem)] animate-page-enter">
       {/* Chat Top Bar */}
       <div className="flex items-center gap-3 px-4 py-3 bg-surface-container-low/80 backdrop-blur-xl border-b border-outline-variant/20 flex-shrink-0">
-        <button onClick={() => navigate('/messenger/chats')} className="md:hidden p-1 -ml-1">
+        <button onClick={() => navigate('/messenger/chats')} className="p-1 -ml-1">
           <span className="material-symbols-outlined text-on-surface-variant">arrow_back</span>
         </button>
         <div className="relative">
@@ -380,33 +388,55 @@ export default function ChatPage() {
 
       {/* GIF Picker */}
       {showGifPicker && (
-        <div className="px-4 py-3 bg-surface-container border-t border-outline-variant/20 h-64 overflow-hidden flex flex-col">
-          <div className="relative mb-2">
+        <div className="px-4 py-3 bg-surface-container border-t border-outline-variant/20 h-80 overflow-hidden flex flex-col gif-picker-mobile animate-bottom-sheet">
+          <div className="flex items-center gap-2 mb-2">
             <input
               type="text"
               value={gifQuery}
               onChange={e => handleGifSearch(e.target.value)}
               placeholder="Search GIFs..."
-              className="w-full bg-surface-container-high rounded-xl px-4 py-2 text-sm text-on-surface"
+              className="flex-1 bg-surface-container-high rounded-xl px-4 py-2 text-sm text-on-surface"
               autoFocus
             />
+            <button onClick={() => setShowGifPicker(false)} className="p-1.5 rounded-lg hover:bg-surface-container-high">
+              <span className="material-symbols-outlined text-on-surface-variant text-lg">close</span>
+            </button>
           </div>
-          <div className="flex-1 overflow-y-auto grid grid-cols-3 gap-2">
+          <div className="flex-1 overflow-y-auto grid grid-cols-2 gap-2">
             {gifResults.map(gif => (
-              <button key={gif.id} onClick={() => handleGifSend(gif)} className="rounded-lg overflow-hidden hover:opacity-80 transition-opacity">
-                <img src={gif.preview || gif.url} alt={gif.title} className="w-full h-20 object-cover" loading="lazy" />
+              <button key={gif.id} onClick={() => handleGifSend(gif)} className="rounded-xl overflow-hidden hover:opacity-80 transition-opacity border border-outline-variant/10">
+                <img src={gif.preview || gif.url} alt={gif.title} className="w-full aspect-auto" loading="lazy" />
               </button>
             ))}
+            {gifResults.length === 0 && <p className="col-span-2 text-center text-on-surface-variant text-sm py-8">No GIFs found</p>}
           </div>
         </div>
       )}
 
       {/* Emoji Picker */}
       {showEmojiPicker && (
-        <div className="px-4 py-3 bg-surface-container border-t border-outline-variant/20">
-          <div className="flex flex-wrap gap-2">
-            {EMOJIS.map(em => (
-              <button key={em} onClick={() => { setText(prev => prev + em); setShowEmojiPicker(false) }} className="text-2xl hover:scale-125 transition-transform">
+        <div className="px-3 py-2 bg-surface-container border-t border-outline-variant/20 emoji-picker-mobile animate-bottom-sheet">
+          {/* Category tabs */}
+          <div className="emoji-tabs">
+            {EMOJI_KEYS.map(key => (
+              <button
+                key={key}
+                onClick={() => setEmojiCategory(key)}
+                className={`emoji-tab ${emojiCategory === key ? 'active' : ''}`}
+              >
+                {key}
+              </button>
+            ))}
+            <button onClick={() => setShowEmojiPicker(false)} className="emoji-tab ml-auto" style={{fontSize: '14px'}}>
+              <span className="material-symbols-outlined text-on-surface-variant text-lg">close</span>
+            </button>
+          </div>
+          {/* Category label */}
+          <p className="text-on-surface-variant text-xs font-medium mb-1.5 px-1">{EMOJI_CATEGORIES[emojiCategory].name}</p>
+          {/* Emoji grid */}
+          <div className="flex flex-wrap gap-1 max-h-48 overflow-y-auto pb-1">
+            {EMOJI_CATEGORIES[emojiCategory].emojis.map((em, i) => (
+              <button key={`${em}-${i}`} onClick={() => setText(prev => prev + em)} className="text-2xl hover:scale-125 transition-transform p-0.5 rounded">
                 {em}
               </button>
             ))}
@@ -415,7 +445,7 @@ export default function ChatPage() {
       )}
 
       {/* Input Bar */}
-      <div className="px-4 py-3 bg-surface-container-low border-t border-outline-variant/20 flex items-end gap-2 flex-shrink-0">
+      <div className="px-3 md:px-4 py-2 md:py-3 bg-surface-container-low border-t border-outline-variant/20 flex items-end gap-1.5 md:gap-2 flex-shrink-0 chat-input-mobile">
         {/* Attach */}
         <div className="relative">
           <button onClick={() => setShowAttach(!showAttach)} className="p-2 rounded-xl text-on-surface-variant hover:text-secondary hover:bg-secondary/10 transition-all">
@@ -448,7 +478,7 @@ export default function ChatPage() {
         </button>
 
         {/* GIF */}
-        <button onClick={() => { setShowGifPicker(!showGifPicker); setShowEmojiPicker(false) }} className="p-2 rounded-xl text-on-surface-variant hover:text-secondary hover:bg-secondary/10 transition-all hidden md:block">
+        <button onClick={() => { setShowGifPicker(!showGifPicker); setShowEmojiPicker(false) }} className="p-2 rounded-xl text-on-surface-variant hover:text-secondary hover:bg-secondary/10 transition-all">
           <span className="material-symbols-outlined text-xl">gif_box</span>
         </button>
 

@@ -52,7 +52,7 @@ export default function ChatListPage() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto" onClick={() => setContextMenu(null)}>
+    <div className="max-w-3xl mx-auto animate-page-enter" onClick={() => setContextMenu(null)}>
       {/* Search */}
       <div className="px-4 pt-4">
         <div className="relative mb-3">

@@ -3,7 +3,7 @@ import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
 const MOBILE_NAV = [
-  { to: '/messenger/chats', label: 'Chats', icon: 'chat' },
+  { to: '/messenger/chats', label: 'Home', icon: 'home' },
   { to: '/messenger/stories', label: 'Stories', icon: 'auto_stories' },
   { to: '/messenger/search', label: 'Search', icon: 'search' },
   { to: '/messenger/notifications', label: 'Alerts', icon: 'notifications' },
@@ -33,7 +33,7 @@ export default function MessengerLayout() {
   return (
     <div className="min-h-screen bg-background">
       {/* Top Bar */}
-      <nav className="fixed top-0 left-0 right-0 z-50 h-14 md:h-16 bg-surface-container-low/80 backdrop-blur-xl border-b border-outline-variant/20 px-4 md:px-6 flex items-center gap-3">
+      <nav className="fixed top-0 left-0 right-0 z-50 h-14 md:h-16 bg-surface-container-low/80 backdrop-blur-xl border-b border-outline-variant/20 px-3 md:px-6 flex items-center gap-2 md:gap-3">
         {/* Logo */}
         <NavLink to="/messenger/chats" className="flex items-center gap-2 flex-shrink-0">
           <div className="w-8 h-8 rounded-lg gradient-secondary flex items-center justify-center">
@@ -57,7 +57,22 @@ export default function MessengerLayout() {
         </div>
 
         {/* Right actions */}
-        <div className="flex items-center gap-1 ml-auto flex-shrink-0">
+        <div className="flex items-center gap-0.5 md:gap-1 ml-auto flex-shrink-0">
+          {/* Home Button */}
+          <NavLink
+            to="/messenger/chats"
+            className={({ isActive }) =>
+              `flex items-center gap-1 px-2 md:px-3 py-2 rounded-xl text-sm font-medium transition-all ${
+                isActive
+                  ? 'text-secondary bg-secondary/10'
+                  : 'text-on-surface-variant hover:text-secondary hover:bg-secondary/10'
+              }`
+            }
+          >
+            <span className="material-symbols-outlined text-lg">home</span>
+            <span className="hidden md:inline text-sm">Home</span>
+          </NavLink>
+
           {/* Notifications */}
           <NavLink
             to="/messenger/notifications"
@@ -70,7 +85,7 @@ export default function MessengerLayout() {
           {/* Switch to Study */}
           <button
             onClick={handleSwitch}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium text-on-surface-variant hover:text-secondary hover:bg-secondary/10 transition-all"
+            className="flex items-center gap-1 px-2 md:px-3 py-2 rounded-xl text-sm font-medium text-on-surface-variant hover:text-secondary hover:bg-secondary/10 transition-all"
             title="Switch to Study"
           >
             <span className="material-symbols-outlined text-lg">swap_horiz</span>

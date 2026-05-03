@@ -133,8 +133,41 @@ export default function StudyLayout() {
         </div>
       </nav>
 
+      {/* Mobile Top Bar - shows switch button */}
+      <div className="md:hidden fixed top-0 left-0 right-0 z-50 h-14 bg-surface-container-low/80 backdrop-blur-xl border-b border-outline-variant/20 px-3 flex items-center">
+        <NavLink to="/study/home" className="flex items-center gap-2 flex-shrink-0">
+          <div className="w-8 h-8 rounded-lg gradient-primary flex items-center justify-center">
+            <span className="material-symbols-outlined text-white text-base">auto_awesome</span>
+          </div>
+          <span className="font-headline text-sm font-bold text-on-surface">Focus Sanctuary</span>
+        </NavLink>
+        <div className="flex-1" />
+        {/* Mobile Switch Button */}
+        <button
+          onClick={() => setSwitchOpen(true)}
+          className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-medium text-on-surface-variant hover:text-primary hover:bg-primary/10 transition-all mr-1"
+          title="Switch Mode"
+        >
+          <span className="material-symbols-outlined text-lg">swap_horiz</span>
+          <span className="text-xs">Switch</span>
+        </button>
+        {/* Mobile Avatar */}
+        <button
+          onClick={() => setAvatarOpen(!avatarOpen)}
+          className="w-8 h-8 rounded-full overflow-hidden border-2 border-outline-variant/50"
+        >
+          {userProfile?.profilePic ? (
+            <img src={userProfile.profilePic} alt="" className="w-full h-full object-cover" />
+          ) : (
+            <div className="w-full h-full bg-surface-container-highest flex items-center justify-center">
+              <span className="material-symbols-outlined text-outline text-sm">person</span>
+            </div>
+          )}
+        </button>
+      </div>
+
       {/* Page Content */}
-      <main className="md:pt-16 pb-20 md:pb-0">
+      <main className="pt-14 md:pt-16 pb-20 md:pb-0">
         <Outlet />
       </main>
 

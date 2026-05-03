@@ -1,4 +1,4 @@
-export const searchGifs = async (query, limit = 20, offset = 0) => {
+export const searchGifs = async (query, limit = 8, offset = 0) => {
   const API_KEY = import.meta.env.VITE_GIPHY_API_KEY
   const url = query
     ? `https://api.giphy.com/v1/gifs/search?api_key=${API_KEY}&q=${encodeURIComponent(query)}&limit=${limit}&offset=${offset}&rating=pg`
@@ -9,10 +9,10 @@ export const searchGifs = async (query, limit = 20, offset = 0) => {
   const data = await res.json()
   return data.data.map(gif => ({
     id: gif.id,
-    url: gif.images.fixed_height.url,
-    preview: gif.images.fixed_height_small.url,
-    width: gif.images.fixed_height.width,
-    height: gif.images.fixed_height.height,
+    url: gif.images.original.url,
+    preview: gif.images.downsized.url,
+    width: parseInt(gif.images.original.width),
+    height: parseInt(gif.images.original.height),
     title: gif.title,
   }))
 }

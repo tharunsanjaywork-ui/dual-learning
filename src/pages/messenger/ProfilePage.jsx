@@ -110,12 +110,17 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-8">
+    <div className="max-w-2xl mx-auto px-4 py-6 md:py-8 animate-page-enter">
+      {/* Back Button */}
+      <button onClick={() => navigate(-1)} className="page-back-btn mb-4">
+        <span className="material-symbols-outlined text-on-surface">arrow_back</span>
+      </button>
+
       {/* Hero Section */}
       <div className="flex flex-col items-center text-center mb-8">
         {/* Profile Picture */}
         <div className="relative mb-5">
-          <div className="w-32 h-32 md:w-44 md:h-44 rounded-full p-1 bg-gradient-to-r from-secondary to-tertiary shadow-[0_0_40px_rgba(0,228,117,0.3)]">
+          <div className="w-28 h-28 md:w-44 md:h-44 rounded-full p-1 bg-gradient-to-r from-secondary to-tertiary shadow-[0_0_40px_rgba(0,228,117,0.3)]">
             <div className="w-full h-full rounded-full overflow-hidden bg-background p-0.5">
               {profile.profilePic ? (
                 <img src={profile.profilePic} alt="" className="w-full h-full rounded-full object-cover" />
@@ -132,7 +137,7 @@ export default function ProfilePage() {
         </div>
 
         {/* Name */}
-        <h1 className="font-headline text-2xl md:text-4xl font-black text-on-surface mb-1">{profile.displayName}</h1>
+        <h1 className="font-headline text-xl md:text-4xl font-black text-on-surface mb-1">{profile.displayName}</h1>
         <p className="text-secondary font-medium mb-2">@{profile.username}</p>
         {profile.bio && <p className="text-on-surface-variant text-sm max-w-sm mb-4">{profile.bio}</p>}
 

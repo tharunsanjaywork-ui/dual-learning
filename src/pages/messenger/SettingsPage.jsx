@@ -84,8 +84,13 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="max-w-lg mx-auto px-4 py-6">
-      <h1 className="font-headline text-2xl font-bold text-on-surface mb-6">Settings</h1>
+    <div className="max-w-lg mx-auto px-4 py-6 animate-page-enter">
+      <div className="flex items-center gap-3 mb-6">
+        <button onClick={() => navigate(-1)} className="page-back-btn">
+          <span className="material-symbols-outlined text-on-surface">arrow_back</span>
+        </button>
+        <h1 className="font-headline text-2xl font-bold text-on-surface">Settings</h1>
+      </div>
 
       <div className="space-y-6">
         {SECTIONS.map(section => (

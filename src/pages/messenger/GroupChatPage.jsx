@@ -106,12 +106,12 @@ export default function GroupChatPage() {
   const isAdmin = group.admins?.includes(userProfile?.id)
 
   return (
-    <div className="flex h-[calc(100vh-3.5rem)] md:h-[calc(100vh-4rem)]">
+    <div className="flex h-[calc(100vh-3.5rem)] md:h-[calc(100vh-4rem)] animate-page-enter">
       {/* Chat Area */}
       <div className="flex-1 flex flex-col">
         {/* Top Bar */}
         <div className="flex items-center gap-3 px-4 py-3 bg-surface-container-low/80 backdrop-blur-xl border-b border-outline-variant/20 flex-shrink-0">
-          <button onClick={() => navigate('/messenger/chats')} className="md:hidden p-1 -ml-1">
+          <button onClick={() => navigate('/messenger/chats')} className="p-1 -ml-1">
             <span className="material-symbols-outlined text-on-surface-variant">arrow_back</span>
           </button>
           <div className="w-10 h-10 rounded-full gradient-secondary flex items-center justify-center text-lg">{group.icon || '📚'}</div>
