@@ -1,11 +1,61 @@
-import { useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { storage } from '../../utils/storage'
+import { useAuth } from '../../context/AuthContext'
+import { db } from '../../lib/firebase'
+import { doc, getDoc } from 'firebase/firestore'
 
 export default function ProgressPage() {
-  const streak = storage.getStudyStreak() || 14
-  const videosWatched = storage.getVideosWatched()
-  const quizHistory = storage.getQuizHistory()
+  const { userProfile } = useAuth()
+  const [progressData, setProgressData] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  // Fetch real data from Firestore
+  useEffect(() => {
+    const fetchProgress = async () => {
+      setLoading(true)
+      const userId = userProfile?.id || storage.getUserId()
+      if (!userId) { setLoading(false); return }
+
+      try {
+        const progressDoc = await getDoc(doc(db, 'studyProgress', userId))
+        if (progressDoc.exists()) {
+          setProgressData(progressDoc.data())
+        } else {
+          // Fallback to localStorage data
+          setProgressData({
+            videosWatched: storage.getVideosWatched(),
+            quizScores: storage.getQuizHistory(),
+            streak: storage.getStudyStreak(),
+            lastStudiedDate: null,
+            dailyGoalMinutes: 120,
+            todayMinutes: 0,
+          })
+        }
+      } catch (err) {
+        console.error('Failed to fetch progress:', err)
+        // Fallback to localStorage
+        setProgressData({
+          videosWatched: storage.getVideosWatched(),
+          quizScores: storage.getQuizHistory(),
+          streak: storage.getStudyStreak(),
+          lastStudiedDate: null,
+          dailyGoalMinutes: 120,
+          todayMinutes: 0,
+        })
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchProgress()
+  }, [userProfile?.id])
+
+  const streak = progressData?.streak || 0
+  const videosWatched = progressData?.videosWatched || storage.getVideosWatched()
+  const quizHistory = progressData?.quizScores || storage.getQuizHistory()
   const studiedDays = storage.getStudiedDays()
+  const goalMinutes = progressData?.dailyGoalMinutes || 120
+  const todayMinutes = progressData?.todayMinutes || 0
+  const goalPct = goalMinutes > 0 ? Math.min(Math.round((todayMinutes / goalMinutes) * 100), 100) : 0
 
   // Generate calendar days for current month
   const calendarDays = useMemo(() => {
@@ -17,7 +67,6 @@ export default function ProgressPage() {
     const today = now.getDate()
 
     const days = []
-    // Blank days before first of month (Mon=0 start)
     const startOffset = firstDay === 0 ? 6 : firstDay - 1
     for (let i = 0; i < startOffset; i++) days.push(null)
 
@@ -34,14 +83,43 @@ export default function ProgressPage() {
   }, [studiedDays])
 
   const monthName = new Date().toLocaleString('default', { month: 'long', year: 'numeric' })
-  const goalMinutes = 120
-  const todayMinutes = 80
-  const goalPct = Math.min(Math.round((todayMinutes / goalMinutes) * 100), 100)
 
   // SVG ring for daily goal
   const radius = 55
   const circumference = 2 * Math.PI * radius
   const goalOffset = circumference - (goalPct / 100) * circumference
+
+  // Calculate subject progress from quiz scores
+  const subjectProgress = useMemo(() => {
+    const subjects = {
+      'jee-mains': { label: 'JEE Mains', scores: [], color: '#3b82f6' },
+      'jee-advanced': { label: 'JEE Advanced', scores: [], color: '#00e475' },
+      'neet': { label: 'NEET', scores: [], color: '#81ecff' },
+    }
+    quizHistory.forEach(q => {
+      if (subjects[q.subject]) {
+        subjects[q.subject].scores.push(q.score / (q.total || 10))
+      }
+    })
+    return Object.entries(subjects).map(([key, val]) => ({
+      label: val.label,
+      color: val.color,
+      pct: val.scores.length > 0
+        ? Math.round((val.scores.reduce((a, b) => a + b, 0) / val.scores.length) * 100)
+        : 0,
+    }))
+  }, [quizHistory])
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-10 h-10 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+          <p className="text-on-surface-variant font-body text-sm">Loading progress...</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="px-4 md:px-8 lg:px-16 py-8">
@@ -64,7 +142,7 @@ export default function ProgressPage() {
             </div>
           </div>
           <p className="text-on-surface-variant text-sm text-center">
-            <span className="text-on-surface font-medium">1hr 20min</span> of 2hr daily goal
+            <span className="text-on-surface font-medium">{todayMinutes}min</span> of {goalMinutes}min daily goal
           </p>
         </div>
 
@@ -76,7 +154,7 @@ export default function ProgressPage() {
               <div className="flex items-center gap-2 mt-1">
                 <span className="text-2xl">🔥</span>
                 <span className="font-headline text-lg font-bold text-on-surface">{streak} Day Streak</span>
-                <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-medium">Unstoppable</span>
+                {streak >= 7 && <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-medium">{streak >= 30 ? 'Legendary' : streak >= 14 ? 'Unstoppable' : 'On Fire'}</span>}
               </div>
             </div>
           </div>
@@ -111,11 +189,7 @@ export default function ProgressPage() {
       <section className="mb-10">
         <h2 className="font-headline text-xl font-bold text-on-surface mb-5">Subject Progress</h2>
         <div className="space-y-4">
-          {[
-            { label: 'JEE Mains', pct: 60, color: '#3b82f6' },
-            { label: 'JEE Advanced', pct: 30, color: '#00e475' },
-            { label: 'NEET', pct: 75, color: '#81ecff' },
-          ].map(sub => (
+          {subjectProgress.map(sub => (
             <div key={sub.label} className="bg-surface-container border border-outline-variant/20 rounded-xl p-4">
               <div className="flex justify-between mb-2">
                 <span className="text-on-surface font-medium text-sm">{sub.label}</span>

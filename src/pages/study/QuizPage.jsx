@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { getQuizBySubject, subjectLabels } from '../../data/quizData'
 import { storage } from '../../utils/storage'
+import { useAuth } from '../../context/AuthContext'
 
 const EXAMS = [
   { key: 'jee-mains', label: 'JEE Mains', icon: 'analytics', desc: '10 Questions • 5 Minutes', color: '#a68cff' },
@@ -9,6 +10,7 @@ const EXAMS = [
 ]
 
 export default function QuizPage() {
+  const { saveQuizScore, updateStreak } = useAuth()
   const [screen, setScreen] = useState('select') // 'select' | 'quiz' | 'results'
   const [selectedExam, setSelectedExam] = useState(null)
   const [questions, setQuestions] = useState([])
@@ -17,11 +19,19 @@ export default function QuizPage() {
   const [timer, setTimer] = useState(30)
   const [showAnswer, setShowAnswer] = useState(false)
   const [startTime, setStartTime] = useState(null)
+  const timerAutoAdvanced = useRef(false)
 
-  // Timer
+  // Timer countdown
   useEffect(() => {
     if (screen !== 'quiz' || showAnswer) return
-    if (timer <= 0) { handleNext(); return }
+    if (timer <= 0) {
+      // Prevent double-fire: only auto-advance once per question
+      if (!timerAutoAdvanced.current) {
+        timerAutoAdvanced.current = true
+        handleNext()
+      }
+      return
+    }
     const interval = setInterval(() => setTimer(t => t - 1), 1000)
     return () => clearInterval(interval)
   }, [screen, timer, showAnswer])
@@ -33,6 +43,7 @@ export default function QuizPage() {
     setAnswers({})
     setTimer(30)
     setShowAnswer(false)
+    timerAutoAdvanced.current = false
     setStartTime(Date.now())
     setScreen('quiz')
   }
@@ -48,10 +59,14 @@ export default function QuizPage() {
       setCurrentQ(prev => prev + 1)
       setTimer(30)
       setShowAnswer(false)
+      timerAutoAdvanced.current = false
     } else {
-      // Quiz complete
-      const score = Object.entries(answers).filter(([q, a]) => questions[parseInt(q)]?.answer === a).length
+      // Quiz complete — calculate score
+      const finalAnswers = { ...answers }
+      const score = Object.entries(finalAnswers).filter(([q, a]) => questions[parseInt(q)]?.answer === a).length
       const timeTaken = Math.round((Date.now() - startTime) / 1000)
+
+      // Save to localStorage
       storage.addQuizResult({
         subject: selectedExam,
         score,
@@ -59,9 +74,21 @@ export default function QuizPage() {
         timeTaken,
       })
       storage.markStudiedToday()
+
+      // Save to Firestore
+      const scoreData = {
+        subject: selectedExam,
+        score,
+        total: questions.length,
+        timeTaken,
+        date: new Date().toISOString(),
+      }
+      saveQuizScore(scoreData).catch(() => {})
+      updateStreak().catch(() => {})
+
       setScreen('results')
     }
-  }, [currentQ, questions, answers, startTime, selectedExam])
+  }, [currentQ, questions, answers, startTime, selectedExam, saveQuizScore, updateStreak])
 
   const score = Object.entries(answers).filter(([q, a]) => questions[parseInt(q)]?.answer === a).length
   const totalTime = startTime ? Math.round((Date.now() - startTime) / 1000) : 0

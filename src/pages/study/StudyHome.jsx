@@ -1,7 +1,10 @@
+import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { storage } from '../../utils/storage'
 import { getAllVideos, getThumbnail } from '../../data/videos'
+import { db } from '../../lib/firebase'
+import { doc, getDoc } from 'firebase/firestore'
 
 const QUICK_ACCESS = [
   { to: '/study/jee-mains', label: 'JEE Mains', desc: 'Complete JEE Mains preparation with video lectures', icon: 'architecture', color: '#3b82f6' },
@@ -10,13 +13,48 @@ const QUICK_ACCESS = [
 ]
 
 export default function StudyHome() {
-  const { userProfile } = useAuth()
-  const streak = storage.getStudyStreak() || 5
+  const { userProfile, updateStreak } = useAuth()
+  const [streak, setStreak] = useState(storage.getStudyStreak() || 0)
   const continueWatching = storage.getContinueWatching()
   const allVideos = getAllVideos()
-  const recommended = allVideos.sort(() => Math.random() - 0.5).slice(0, 5)
+  const [recommended] = useState(() => [...allVideos].sort(() => Math.random() - 0.5).slice(0, 5))
   const videosWatched = storage.getVideosWatched().length
   const quizzesTaken = storage.getQuizHistory().length
+
+  // Fetch real streak from Firestore
+  useEffect(() => {
+    const fetchStreak = async () => {
+      const userId = userProfile?.id || storage.getUserId()
+      if (!userId) return
+      try {
+        const progressDoc = await getDoc(doc(db, 'studyProgress', userId))
+        if (progressDoc.exists()) {
+          const data = progressDoc.data()
+          setStreak(data.streak || 0)
+        }
+      } catch (err) {
+        console.error('Failed to fetch streak:', err)
+      }
+    }
+    fetchStreak()
+  }, [userProfile?.id])
+
+  const handleVideoClick = (video) => {
+    storage.setContinueWatching(video)
+    storage.addVideoWatched(video.id)
+    storage.markStudiedToday()
+    updateStreak?.().then(newStreak => {
+      if (newStreak) setStreak(newStreak)
+    }).catch(() => {})
+    window.open(`https://www.youtube.com/watch?v=${video.id}`, '_blank')
+  }
+
+  const handleContinueClick = () => {
+    if (!continueWatching) return
+    storage.markStudiedToday()
+    updateStreak?.().catch(() => {})
+    window.open(`https://www.youtube.com/watch?v=${continueWatching.id}`, '_blank')
+  }
 
   return (
     <div className="min-h-screen">
@@ -69,22 +107,25 @@ export default function StudyHome() {
         {continueWatching && (
           <section>
             <h2 className="font-headline text-xl md:text-2xl font-bold text-on-surface mb-5">Continue Watching</h2>
-            <div className="bg-surface-container border border-outline-variant/20 rounded-2xl overflow-hidden flex flex-col md:flex-row">
+            <button
+              onClick={handleContinueClick}
+              className="w-full text-left bg-surface-container border border-outline-variant/20 rounded-2xl overflow-hidden flex flex-col md:flex-row hover:border-primary/30 hover:shadow-lg transition-all group"
+            >
               <div className="relative aspect-video md:w-80 flex-shrink-0">
                 <img src={getThumbnail(continueWatching.id)} alt="" className="w-full h-full object-cover" />
-                <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
-                  <div className="w-14 h-14 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
+                <div className="absolute inset-0 bg-black/30 flex items-center justify-center group-hover:bg-black/40 transition-colors">
+                  <div className="w-14 h-14 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center group-hover:scale-110 transition-transform">
                     <span className="material-symbols-outlined filled text-white text-3xl">play_arrow</span>
                   </div>
                 </div>
                 <span className="absolute bottom-2 right-2 bg-black/80 text-white text-xs px-2 py-0.5 rounded-md font-medium">{continueWatching.duration}</span>
               </div>
               <div className="p-5 flex flex-col justify-center border-l-4 border-primary">
-                <h3 className="font-headline text-lg font-bold text-on-surface mb-1">{continueWatching.title}</h3>
+                <h3 className="font-headline text-lg font-bold text-on-surface mb-1 group-hover:text-primary transition-colors">{continueWatching.title}</h3>
                 <p className="text-on-surface-variant text-sm mb-2">{continueWatching.channel}</p>
                 <p className="text-outline text-xs">{continueWatching.views}</p>
               </div>
-            </div>
+            </button>
           </section>
         )}
 
@@ -93,13 +134,10 @@ export default function StudyHome() {
           <h2 className="font-headline text-xl md:text-2xl font-bold text-on-surface mb-5">Recommended For You</h2>
           <div className="flex gap-4 overflow-x-auto pb-4 hide-scrollbar">
             {recommended.map(video => (
-              <a
+              <button
                 key={video.id}
-                href={`https://www.youtube.com/watch?v=${video.id}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={() => { storage.setContinueWatching(video); storage.addVideoWatched(video.id); storage.markStudiedToday() }}
-                className="group flex-shrink-0 w-64"
+                onClick={() => handleVideoClick(video)}
+                className="group flex-shrink-0 w-64 text-left"
               >
                 <div className="relative aspect-video rounded-xl overflow-hidden mb-3">
                   <img src={getThumbnail(video.id)} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
@@ -107,7 +145,7 @@ export default function StudyHome() {
                 </div>
                 <h4 className="text-on-surface text-sm font-medium line-clamp-2 group-hover:text-primary transition-colors">{video.title}</h4>
                 <p className="text-on-surface-variant text-xs mt-1">{video.channel} • {video.views}</p>
-              </a>
+              </button>
             ))}
           </div>
         </section>

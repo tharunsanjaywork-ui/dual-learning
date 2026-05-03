@@ -7,7 +7,7 @@ import {
   onAuthStateChanged,
 } from 'firebase/auth'
 import {
-  doc, setDoc, getDoc, getDocs, collection, query, where, serverTimestamp,
+  doc, setDoc, getDoc, getDocs, collection, query, where, serverTimestamp, updateDoc, arrayUnion,
 } from 'firebase/firestore'
 import bcrypt from 'bcryptjs'
 import { storage } from '../utils/storage'
@@ -35,20 +35,51 @@ export function AuthProvider({ children }) {
       if (isSwitching.current) return
 
       if (firebaseUser) {
+        // Check if we have a session token — if not, this is a stale auth state after tab reopen
+        const sessionToken = sessionStorage.getItem('dz_token')
+        if (!sessionToken) {
+          // No session token means tab was closed and reopened — force login
+          await signOut(auth).catch(() => {})
+          setUser(null)
+          setUserProfile(null)
+          setMode(null)
+          setLoading(false)
+          return
+        }
+
         setUser(firebaseUser)
-        // Fetch profile from Firestore (try both UIDs)
+
+        // Restore mode from sessionStorage
+        const savedMode = sessionStorage.getItem('dz_mode')
+
+        // Fetch profile from Firestore
         const profileDoc = await getDoc(doc(db, 'users', firebaseUser.uid))
         if (profileDoc.exists()) {
           setUserProfile({ id: profileDoc.id, ...profileDoc.data() })
         } else {
           // Try to find by studyAccountUid or messengerAccountUid
           const allUsers = await getDocs(collection(db, 'users'))
-          const found = allUsers.docs.find(d => 
-            d.data().studyAccountUid === firebaseUser.uid || 
+          const found = allUsers.docs.find(d =>
+            d.data().studyAccountUid === firebaseUser.uid ||
             d.data().messengerAccountUid === firebaseUser.uid
           )
           if (found) {
             setUserProfile({ id: found.id, ...found.data() })
+          }
+        }
+
+        // Restore mode
+        if (savedMode) {
+          setMode(savedMode)
+        } else {
+          // Determine mode from email
+          const email = firebaseUser.email || ''
+          if (email.includes('_secret@')) {
+            setMode('messenger')
+            sessionStorage.setItem('dz_mode', 'messenger')
+          } else if (email.includes('@dualzone.app')) {
+            setMode('study')
+            sessionStorage.setItem('dz_mode', 'study')
           }
         }
       } else {
@@ -165,6 +196,7 @@ export function AuthProvider({ children }) {
 
       const token = await cred.user.getIdToken()
       sessionStorage.setItem('dz_token', token)
+      sessionStorage.setItem('dz_mode', 'study')
 
       setMode('study')
       return { mode: 'study' }
@@ -185,6 +217,7 @@ export function AuthProvider({ children }) {
 
         const token = await cred.user.getIdToken()
         sessionStorage.setItem('dz_token', token)
+        sessionStorage.setItem('dz_mode', 'messenger')
 
         setMode('messenger')
         return { mode: 'messenger' }
@@ -213,6 +246,11 @@ export function AuthProvider({ children }) {
       const secretEmail = userProfile.secretEmail || `${userProfile.username}_secret@dualzone.app`
       const cred = await signInWithEmailAndPassword(auth, secretEmail, password)
       setUser(cred.user)
+
+      const token = await cred.user.getIdToken()
+      sessionStorage.setItem('dz_token', token)
+      sessionStorage.setItem('dz_mode', 'messenger')
+
       setMode('messenger')
     } finally {
       isSwitching.current = false
@@ -223,12 +261,12 @@ export function AuthProvider({ children }) {
   // Switch from messenger to study (instant, no password)
   const switchToStudy = async () => {
     if (!userProfile) return
-    // Re-authenticate with the study account
+
     isSwitching.current = true
     try {
-      const email = userProfile.email || `${userProfile.username}@dualzone.app`
       // We can't re-auth without the study password, so just change mode
       // The user is still authenticated and Firestore profile is preserved
+      sessionStorage.setItem('dz_mode', 'study')
       setMode('study')
     } finally {
       isSwitching.current = false
@@ -241,9 +279,81 @@ export function AuthProvider({ children }) {
       await setDoc(doc(db, 'users', userProfile.id), { isOnline: false, lastSeen: serverTimestamp() }, { merge: true }).catch(() => {})
     }
     sessionStorage.removeItem('dz_token')
+    sessionStorage.removeItem('dz_mode')
     setMode(null)
     setUserProfile(null)
     await signOut(auth)
+  }
+
+  // Update study progress in Firestore
+  const updateStudyProgress = async (updates) => {
+    const userId = userProfile?.id || storage.getUserId()
+    if (!userId) return
+    try {
+      await updateDoc(doc(db, 'studyProgress', userId), updates)
+    } catch (err) {
+      // If doc doesn't exist, create it
+      try {
+        await setDoc(doc(db, 'studyProgress', userId), {
+          videosWatched: [],
+          quizScores: [],
+          streak: 0,
+          lastStudiedDate: null,
+          dailyGoalMinutes: 120,
+          todayMinutes: 0,
+          ...updates,
+        })
+      } catch (e) {
+        console.error('Failed to update study progress:', e)
+      }
+    }
+  }
+
+  // Save quiz score to Firestore
+  const saveQuizScore = async (scoreData) => {
+    const userId = userProfile?.id || storage.getUserId()
+    if (!userId) return
+    try {
+      await updateDoc(doc(db, 'studyProgress', userId), {
+        quizScores: arrayUnion(scoreData),
+      })
+    } catch {
+      console.error('Failed to save quiz score')
+    }
+  }
+
+  // Update streak in Firestore
+  const updateStreak = async () => {
+    const userId = userProfile?.id || storage.getUserId()
+    if (!userId) return
+    try {
+      const progressDoc = await getDoc(doc(db, 'studyProgress', userId))
+      if (progressDoc.exists()) {
+        const data = progressDoc.data()
+        const today = new Date().toISOString().split('T')[0]
+        const lastStudied = data.lastStudiedDate || ''
+        const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0]
+
+        let newStreak = data.streak || 0
+        if (lastStudied === today) {
+          // Already studied today, no change
+          return newStreak
+        } else if (lastStudied === yesterday) {
+          newStreak += 1
+        } else {
+          newStreak = 1
+        }
+
+        await updateDoc(doc(db, 'studyProgress', userId), {
+          streak: newStreak,
+          lastStudiedDate: today,
+        })
+        return newStreak
+      }
+    } catch (err) {
+      console.error('Failed to update streak:', err)
+    }
+    return 0
   }
 
   const value = {
@@ -258,6 +368,9 @@ export function AuthProvider({ children }) {
     switchToStudy,
     setMode,
     setUserProfile,
+    updateStudyProgress,
+    saveQuizScore,
+    updateStreak,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

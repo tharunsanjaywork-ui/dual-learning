@@ -20,7 +20,9 @@ import NotificationsPage from './pages/messenger/NotificationsPage'
 import ProfilePage from './pages/messenger/ProfilePage'
 import EditProfilePage from './pages/messenger/EditProfilePage'
 import SettingsPage from './pages/messenger/SettingsPage'
+import StoriesPage from './pages/messenger/StoriesPage'
 import SwitchTransition from './components/shared/SwitchTransition'
+import StorageMonitor from './components/StorageMonitor'
 
 function ProtectedRoute({ children, requiredMode }) {
   const { user, mode, loading } = useAuth()
@@ -58,6 +60,8 @@ export default function App() {
   }
 
   return (
+    <>
+    <StorageMonitor />
     <Routes>
       {/* Auth Routes */}
       <Route path="/register" element={<RegisterPage />} />
@@ -93,6 +97,7 @@ export default function App() {
         <Route path="chat/:chatId" element={<ChatPage />} />
         <Route path="group/:groupId" element={<GroupChatPage />} />
         <Route path="search" element={<SearchPage />} />
+        <Route path="stories" element={<StoriesPage />} />
         <Route path="notifications" element={<NotificationsPage />} />
         <Route path="profile/:userId" element={<ProfilePage />} />
         <Route path="profile/edit" element={<EditProfilePage />} />
@@ -102,5 +107,6 @@ export default function App() {
       {/* Default redirect */}
       <Route path="*" element={<Navigate to={storage.isFirstVisit() ? '/register' : '/login'} replace />} />
     </Routes>
+    </>
   )
 }

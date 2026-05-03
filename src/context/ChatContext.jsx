@@ -76,11 +76,37 @@ export function ChatProvider({ children }) {
     return unsub
   }, [activeChat])
 
+  // Listen to typing indicator for active chat
+  useEffect(() => {
+    if (!activeChat || !userProfile?.id) return
+
+    const typingRef = doc(db, 'chats', activeChat)
+    const unsub = onSnapshot(typingRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data()
+        const typing = data.typing || {}
+        // Remove own typing status and expired ones (> 5 seconds)
+        const now = Date.now()
+        const activeTypers = {}
+        Object.entries(typing).forEach(([uid, ts]) => {
+          if (uid !== userProfile.id) {
+            const typingTime = ts?.toMillis ? ts.toMillis() : (typeof ts === 'number' ? ts : 0)
+            if (now - typingTime < 5000) {
+              activeTypers[uid] = true
+            }
+          }
+        })
+        setTypingUsers(activeTypers)
+      }
+    })
+
+    return unsub
+  }, [activeChat, userProfile?.id])
+
   // Listen to online status of users
   useEffect(() => {
     if (!userProfile?.id) return
 
-    // Listen to all users' online status (for simplicity, listen to followed users)
     const following = userProfile.following || []
     if (following.length === 0) return
 
@@ -103,6 +129,18 @@ export function ChatProvider({ children }) {
 
     return () => unsubs.forEach(u => u())
   }, [userProfile?.id, userProfile?.following])
+
+  // Set typing status
+  const setTyping = useCallback(async (chatId, isTyping) => {
+    if (!userProfile?.id || !chatId) return
+    try {
+      await updateDoc(doc(db, 'chats', chatId), {
+        [`typing.${userProfile.id}`]: isTyping ? serverTimestamp() : null,
+      })
+    } catch {
+      // Ignore errors for typing indicator
+    }
+  }, [userProfile?.id])
 
   // Send a message
   const sendMessage = useCallback(async (chatId, message) => {
@@ -134,7 +172,10 @@ export function ChatProvider({ children }) {
       lastMessage: message.content || `[${message.type}]`,
       lastMessageAt: serverTimestamp(),
     })
-  }, [userProfile?.id])
+
+    // Clear typing
+    setTyping(chatId, false)
+  }, [userProfile?.id, setTyping])
 
   // Create or get a chat with another user
   const getOrCreateChat = useCallback(async (otherUserId) => {
@@ -156,6 +197,7 @@ export function ChatProvider({ children }) {
         mutedBy: [],
         archivedBy: [],
         wallpaper: '',
+        typing: {},
         disappearingMessages: { enabled: false, duration: 0 },
       })
     }
@@ -177,18 +219,31 @@ export function ChatProvider({ children }) {
   const addReaction = useCallback(async (chatId, messageId, emoji) => {
     if (!userProfile?.id) return
     const msgRef = doc(db, 'messages', chatId, 'msgs', messageId)
-    await updateDoc(msgRef, {
-      reactions: arrayUnion({ uid: userProfile.id, emoji }),
-    })
+    // First remove any existing reaction from this user
+    const msgDoc = await getDoc(msgRef)
+    if (msgDoc.exists()) {
+      const existingReactions = msgDoc.data().reactions || []
+      const withoutMine = existingReactions.filter(r => r.uid !== userProfile.id)
+      withoutMine.push({ uid: userProfile.id, emoji })
+      await updateDoc(msgRef, { reactions: withoutMine })
+    }
   }, [userProfile?.id])
 
   // Delete message
-  const deleteMessage = useCallback(async (chatId, messageId) => {
-    await updateDoc(doc(db, 'messages', chatId, 'msgs', messageId), {
-      isDeleted: true,
-      content: 'This message was deleted',
-    })
-  }, [])
+  const deleteMessage = useCallback(async (chatId, messageId, forEveryone = false) => {
+    if (forEveryone) {
+      await updateDoc(doc(db, 'messages', chatId, 'msgs', messageId), {
+        isDeleted: true,
+        content: 'This message was deleted',
+        fileURL: '',
+      })
+    } else {
+      // For "delete for me" — we'd need a deletedFor array, simplified here
+      await updateDoc(doc(db, 'messages', chatId, 'msgs', messageId), {
+        [`deletedFor.${userProfile?.id}`]: true,
+      })
+    }
+  }, [userProfile?.id])
 
   // Edit message (2-min window enforced in UI)
   const editMessage = useCallback(async (chatId, messageId, newContent) => {
@@ -196,6 +251,69 @@ export function ChatProvider({ children }) {
       content: newContent,
       isEdited: true,
       editedAt: serverTimestamp(),
+    })
+  }, [])
+
+  // Star/unstar message
+  const toggleStarMessage = useCallback(async (chatId, messageId, isStarred) => {
+    await updateDoc(doc(db, 'messages', chatId, 'msgs', messageId), {
+      isStarred: !isStarred,
+    })
+  }, [])
+
+  // Forward message
+  const forwardMessage = useCallback(async (targetChatId, originalMsg) => {
+    if (!userProfile?.id) return
+    await sendMessage(targetChatId, {
+      type: originalMsg.type,
+      content: originalMsg.content ? `↪ ${originalMsg.content}` : '',
+      fileURL: originalMsg.fileURL,
+      fileName: originalMsg.fileName,
+      fileSize: originalMsg.fileSize,
+      location: originalMsg.location,
+    })
+  }, [userProfile?.id, sendMessage])
+
+  // Pin/unpin chat
+  const togglePinChat = useCallback(async (chatId, isPinned) => {
+    if (!userProfile?.id) return
+    await updateDoc(doc(db, 'chats', chatId), {
+      pinnedBy: isPinned ? arrayRemove(userProfile.id) : arrayUnion(userProfile.id),
+    })
+  }, [userProfile?.id])
+
+  // Mute/unmute chat
+  const toggleMuteChat = useCallback(async (chatId, isMuted) => {
+    if (!userProfile?.id) return
+    await updateDoc(doc(db, 'chats', chatId), {
+      mutedBy: isMuted ? arrayRemove(userProfile.id) : arrayUnion(userProfile.id),
+    })
+  }, [userProfile?.id])
+
+  // Archive/unarchive chat
+  const toggleArchiveChat = useCallback(async (chatId, isArchived) => {
+    if (!userProfile?.id) return
+    await updateDoc(doc(db, 'chats', chatId), {
+      archivedBy: isArchived ? arrayRemove(userProfile.id) : arrayUnion(userProfile.id),
+    })
+  }, [userProfile?.id])
+
+  // Set chat wallpaper
+  const setChatWallpaper = useCallback(async (chatId, wallpaper) => {
+    await updateDoc(doc(db, 'chats', chatId), { wallpaper })
+  }, [])
+
+  // Set nickname
+  const setNickname = useCallback(async (chatId, userId, nickname) => {
+    await updateDoc(doc(db, 'chats', chatId), {
+      [`nicknames.${userId}`]: nickname,
+    })
+  }, [])
+
+  // Set disappearing messages timer
+  const setDisappearingMessages = useCallback(async (chatId, duration) => {
+    await updateDoc(doc(db, 'chats', chatId), {
+      disappearingMessages: { enabled: duration > 0, duration },
     })
   }, [])
 
@@ -210,8 +328,17 @@ export function ChatProvider({ children }) {
     addReaction,
     deleteMessage,
     editMessage,
+    toggleStarMessage,
+    forwardMessage,
     typingUsers,
     onlineUsers,
+    setTyping,
+    togglePinChat,
+    toggleMuteChat,
+    toggleArchiveChat,
+    setChatWallpaper,
+    setNickname,
+    setDisappearingMessages,
   }
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>

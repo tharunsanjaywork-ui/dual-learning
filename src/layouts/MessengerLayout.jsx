@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext'
 
 const MOBILE_NAV = [
   { to: '/messenger/chats', label: 'Chats', icon: 'chat' },
+  { to: '/messenger/stories', label: 'Stories', icon: 'auto_stories' },
   { to: '/messenger/search', label: 'Search', icon: 'search' },
   { to: '/messenger/notifications', label: 'Alerts', icon: 'notifications' },
   { to: '/messenger/profile/me', label: 'Profile', icon: 'person' },

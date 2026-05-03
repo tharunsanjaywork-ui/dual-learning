@@ -187,3 +187,12 @@ input:focus, textarea:focus, select:focus, button:focus-visible {
 .transition-default {
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
+
+/* Story progress animation */
+@keyframes story-progress {
+  from { width: 0%; }
+  to { width: 100%; }
+}
+.animate-story-progress {
+  animation: story-progress 5s linear forwards;
+}

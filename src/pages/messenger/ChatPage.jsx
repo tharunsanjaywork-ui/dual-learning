@@ -1,10 +1,10 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useChat } from '../../context/ChatContext'
 import { useAuth } from '../../context/AuthContext'
 import { db } from '../../lib/firebase'
 import { doc, getDoc } from 'firebase/firestore'
-import { uploadToCloudinary, getFileType } from '../../lib/cloudinary'
+import { uploadToCloudinary, uploadBlobToCloudinary, getFileType } from '../../lib/cloudinary'
 import { searchGifs } from '../../lib/giphy'
 
 const EMOJIS = [
@@ -17,10 +17,13 @@ const EMOJIS = [
 export default function ChatPage() {
   const { chatId } = useParams()
   const navigate = useNavigate()
-  const { messages, setActiveChat, sendMessage, markAsSeen, addReaction } = useChat()
+  const { messages, setActiveChat, sendMessage, markAsSeen, addReaction, deleteMessage, editMessage, toggleStarMessage, forwardMessage, typingUsers, setTyping, chats } = useChat()
   const { userProfile } = useAuth()
   const messagesEndRef = useRef(null)
   const inputRef = useRef(null)
+  const mediaRecorderRef = useRef(null)
+  const audioChunksRef = useRef([])
+  const typingTimeoutRef = useRef(null)
 
   const [text, setText] = useState('')
   const [otherUser, setOtherUser] = useState(null)
@@ -31,6 +34,12 @@ export default function ChatPage() {
   const [showAttach, setShowAttach] = useState(false)
   const [replyTo, setReplyTo] = useState(null)
   const [uploading, setUploading] = useState(false)
+  const [recording, setRecording] = useState(false)
+  const [contextMenu, setContextMenu] = useState(null)
+  const [editingMsg, setEditingMsg] = useState(null)
+  const [editText, setEditText] = useState('')
+  const [showReactPicker, setShowReactPicker] = useState(null)
+  const [forwardModal, setForwardModal] = useState(null)
 
   useEffect(() => {
     setActiveChat(chatId)
@@ -116,6 +125,89 @@ export default function ChatPage() {
     if (!ts) return ''
     const d = ts.toDate ? ts.toDate() : new Date(ts)
     return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  }
+
+  // Typing indicator
+  const handleTextChange = (e) => {
+    setText(e.target.value)
+    setTyping(chatId, true)
+    clearTimeout(typingTimeoutRef.current)
+    typingTimeoutRef.current = setTimeout(() => setTyping(chatId, false), 3000)
+  }
+
+  // Audio recording
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const mr = new MediaRecorder(stream)
+      audioChunksRef.current = []
+      mr.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data) }
+      mr.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop())
+        const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
+        if (blob.size < 500) return
+        setUploading(true)
+        try {
+          const result = await uploadBlobToCloudinary(blob, 'audio', 'messages')
+          await sendMessage(chatId, { type: 'audio', content: '', fileURL: result.secure_url, fileName: 'Voice message', fileSize: blob.size })
+        } catch (err) { alert('Audio upload failed: ' + err.message) }
+        finally { setUploading(false) }
+      }
+      mediaRecorderRef.current = mr
+      mr.start()
+      setRecording(true)
+    } catch { alert('Microphone access denied') }
+  }
+  const stopRecording = () => {
+    if (mediaRecorderRef.current?.state === 'recording') mediaRecorderRef.current.stop()
+    setRecording(false)
+  }
+
+  // Location sharing
+  const shareLocation = () => {
+    setShowAttach(false)
+    if (!navigator.geolocation) { alert('Geolocation not supported'); return }
+    navigator.geolocation.getCurrentPosition(async (pos) => {
+      const { latitude, longitude } = pos.coords
+      let address = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`
+      try {
+        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`)
+        const data = await res.json()
+        if (data.display_name) address = data.display_name
+      } catch {}
+      await sendMessage(chatId, { type: 'location', content: address, location: { latitude, longitude, address } })
+    }, () => alert('Location access denied'))
+  }
+
+  // Context menu
+  const openContextMenu = (e, msg) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const rect = e.currentTarget.getBoundingClientRect()
+    setContextMenu({ msg, x: e.clientX || rect.left, y: e.clientY || rect.top })
+  }
+  const closeContextMenu = () => { setContextMenu(null); setShowReactPicker(null) }
+  useEffect(() => { const h = () => closeContextMenu(); window.addEventListener('click', h); return () => window.removeEventListener('click', h) }, [])
+
+  const handleCopy = (msg) => { navigator.clipboard.writeText(msg.content || '').catch(() => {}); closeContextMenu() }
+  const handleReply = (msg) => { setReplyTo(msg); closeContextMenu(); inputRef.current?.focus() }
+  const handleStar = (msg) => { toggleStarMessage(chatId, msg.id, msg.isStarred); closeContextMenu() }
+  const handleDeleteForMe = (msg) => { deleteMessage(chatId, msg.id, false); closeContextMenu() }
+  const handleDeleteForAll = (msg) => { deleteMessage(chatId, msg.id, true); closeContextMenu() }
+  const handleStartEdit = (msg) => {
+    const created = msg.createdAt?.toMillis ? msg.createdAt.toMillis() : (msg.createdAt?.seconds ? msg.createdAt.seconds * 1000 : 0)
+    if (Date.now() - created > 120000) { alert('Can only edit within 2 minutes'); closeContextMenu(); return }
+    setEditingMsg(msg); setEditText(msg.content); closeContextMenu()
+  }
+  const handleSaveEdit = async () => {
+    if (!editingMsg || !editText.trim()) return
+    await editMessage(chatId, editingMsg.id, editText.trim())
+    setEditingMsg(null); setEditText('')
+  }
+  const handleForward = (msg) => { setForwardModal(msg); closeContextMenu() }
+  const handleForwardTo = async (targetChatId) => {
+    if (forwardModal) await forwardMessage(targetChatId, forwardModal)
+    setForwardModal(null)
   }
 
   const renderMessage = (msg) => {
@@ -204,7 +296,7 @@ export default function ChatPage() {
         </div>
         <div className="flex-1 min-w-0">
           <h3 className="text-on-surface font-medium text-sm truncate">{otherUser?.displayName || 'Loading...'}</h3>
-          <p className="text-on-surface-variant text-xs">{otherUser?.isOnline ? 'Online' : 'Offline'}</p>
+          <p className="text-on-surface-variant text-xs">{Object.keys(typingUsers).length > 0 ? <span className="text-secondary animate-pulse">typing...</span> : otherUser?.isOnline ? 'Online' : 'Offline'}</p>
         </div>
         <div className="flex items-center gap-1">
           <button className="p-2 rounded-xl text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-all">
@@ -231,7 +323,7 @@ export default function ChatPage() {
           const isMine = msg.senderId === userProfile?.id
 
           return (
-            <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'} animate-fade-in`}>
+            <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'} animate-fade-in`} onContextMenu={(e) => openContextMenu(e, msg)}>
               <div className={`max-w-[75%] md:max-w-[60%] ${isMine ? 'order-1' : ''}`}>
                 {/* Reply preview */}
                 {msg.replyTo && (
@@ -343,6 +435,9 @@ export default function ChatPage() {
                   <input type="file" accept={item.accept} onChange={handleFileUpload} className="hidden" />
                 </label>
               ))}
+              <button onClick={shareLocation} className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors w-full">
+                <span className="material-symbols-outlined text-lg">location_on</span>Location
+              </button>
             </div>
           )}
         </div>
@@ -362,7 +457,7 @@ export default function ChatPage() {
           <textarea
             ref={inputRef}
             value={text}
-            onChange={e => setText(e.target.value)}
+            onChange={handleTextChange}
             onKeyDown={handleKeyDown}
             placeholder="Type a message..."
             rows={1}
@@ -379,6 +474,18 @@ export default function ChatPage() {
           </div>
         )}
 
+        {/* Mic */}
+        <button
+          onMouseDown={startRecording}
+          onMouseUp={stopRecording}
+          onTouchStart={startRecording}
+          onTouchEnd={stopRecording}
+          className={`p-2.5 rounded-xl transition-all ${recording ? 'bg-error text-white animate-pulse scale-110' : 'text-on-surface-variant hover:text-secondary hover:bg-secondary/10'}`}
+          title="Hold to record audio"
+        >
+          <span className="material-symbols-outlined text-xl">{recording ? 'stop' : 'mic'}</span>
+        </button>
+
         {/* Send */}
         <button
           onClick={handleSend}
@@ -388,6 +495,68 @@ export default function ChatPage() {
           <span className="material-symbols-outlined text-xl">send</span>
         </button>
       </div>
+
+      {/* Context Menu */}
+      {contextMenu && (
+        <div className="fixed inset-0 z-50" onClick={closeContextMenu}>
+          <div className="glass-strong rounded-2xl p-1.5 w-52 shadow-2xl border border-outline-variant/20 animate-scale-in" style={{ position: 'fixed', left: Math.min(contextMenu.x, window.innerWidth - 220), top: Math.min(contextMenu.y, window.innerHeight - 350) }} onClick={e => e.stopPropagation()}>
+            {[{ icon: 'reply', label: 'Reply', fn: () => handleReply(contextMenu.msg) },
+              { icon: 'add_reaction', label: 'React', fn: () => setShowReactPicker(contextMenu.msg) },
+              { icon: 'content_copy', label: 'Copy', fn: () => handleCopy(contextMenu.msg) },
+              { icon: 'star', label: contextMenu.msg.isStarred ? 'Unstar' : 'Star', fn: () => handleStar(contextMenu.msg) },
+              { icon: 'forward', label: 'Forward', fn: () => handleForward(contextMenu.msg) },
+              ...(contextMenu.msg.senderId === userProfile?.id ? [
+                { icon: 'edit', label: 'Edit', fn: () => handleStartEdit(contextMenu.msg) },
+                { icon: 'delete', label: 'Delete for everyone', fn: () => handleDeleteForAll(contextMenu.msg), danger: true },
+              ] : []),
+              { icon: 'delete_sweep', label: 'Delete for me', fn: () => handleDeleteForMe(contextMenu.msg), danger: true },
+            ].map(item => (
+              <button key={item.label} onClick={item.fn} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm w-full text-left transition-colors ${item.danger ? 'text-error hover:bg-error/10' : 'text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface'}`}>
+                <span className="material-symbols-outlined text-lg">{item.icon}</span>{item.label}
+              </button>
+            ))}
+            {showReactPicker && (
+              <div className="flex flex-wrap gap-1 p-2 border-t border-outline-variant/20 mt-1">
+                {['❤️','😂','😮','😢','😡','👍','🔥','🎉'].map(em => (
+                  <button key={em} onClick={() => { addReaction(chatId, showReactPicker.id, em); closeContextMenu() }} className="text-xl hover:scale-125 transition-transform p-1">{em}</button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Edit Modal */}
+      {editingMsg && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setEditingMsg(null)}>
+          <div className="glass-strong rounded-2xl p-6 w-full max-w-md" onClick={e => e.stopPropagation()}>
+            <h3 className="text-on-surface font-bold mb-3">Edit Message</h3>
+            <textarea value={editText} onChange={e => setEditText(e.target.value)} className="w-full bg-surface-container-high border border-outline-variant/30 rounded-xl px-4 py-3 text-sm text-on-surface resize-none" rows={3} />
+            <div className="flex gap-2 mt-3">
+              <button onClick={handleSaveEdit} className="flex-1 bg-secondary text-on-secondary py-2.5 rounded-full font-bold text-sm">Save</button>
+              <button onClick={() => setEditingMsg(null)} className="flex-1 bg-surface-container-highest text-on-surface-variant py-2.5 rounded-full font-bold text-sm">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Forward Modal */}
+      {forwardModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setForwardModal(null)}>
+          <div className="glass-strong rounded-2xl p-6 w-full max-w-md max-h-96 overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <h3 className="text-on-surface font-bold mb-3">Forward to...</h3>
+            {chats.filter(c => c.id !== chatId).map(c => (
+              <button key={c.id} onClick={() => handleForwardTo(c.id)} className="flex items-center gap-3 w-full px-3 py-3 rounded-xl hover:bg-surface-container-high transition-colors">
+                <div className="w-10 h-10 rounded-full bg-surface-container-highest flex items-center justify-center">
+                  {c.otherUser?.profilePic ? <img src={c.otherUser.profilePic} className="w-full h-full rounded-full object-cover" /> : <span className="material-symbols-outlined text-outline">person</span>}
+                </div>
+                <span className="text-on-surface text-sm font-medium">{c.otherUser?.displayName || 'Unknown'}</span>
+              </button>
+            ))}
+            {chats.filter(c => c.id !== chatId).length === 0 && <p className="text-on-surface-variant text-sm text-center py-4">No other chats to forward to</p>}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

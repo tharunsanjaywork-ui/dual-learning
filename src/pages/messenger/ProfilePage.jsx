@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext'
 import { useChat } from '../../context/ChatContext'
 import { db } from '../../lib/firebase'
 import { doc, getDoc, updateDoc, arrayUnion, arrayRemove, addDoc, collection, serverTimestamp } from 'firebase/firestore'
+import QRCode from 'qrcode'
 
 export default function ProfilePage() {
   const { userId } = useParams()
@@ -12,6 +13,7 @@ export default function ProfilePage() {
   const { getOrCreateChat } = useChat()
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [qrUrl, setQrUrl] = useState('')
 
   const isOwnProfile = userId === 'me' || userId === userProfile?.id
 
@@ -65,6 +67,30 @@ export default function ProfilePage() {
     const chatId = await getOrCreateChat(profile.id)
     if (chatId) navigate(`/messenger/chat/${chatId}`)
   }
+
+  const isBlocked = userProfile?.blockedUsers?.includes(profile?.id)
+
+  const handleBlock = async () => {
+    if (!userProfile?.id || !profile?.id || isOwnProfile) return
+    const myRef = doc(db, 'users', userProfile.id)
+    if (isBlocked) {
+      await updateDoc(myRef, { blockedUsers: arrayRemove(profile.id) })
+      setUserProfile(prev => ({ ...prev, blockedUsers: (prev.blockedUsers || []).filter(id => id !== profile.id) }))
+    } else {
+      if (!confirm(`Block @${profile.username}? They won't be able to message you.`)) return
+      await updateDoc(myRef, { blockedUsers: arrayUnion(profile.id) })
+      setUserProfile(prev => ({ ...prev, blockedUsers: [...(prev.blockedUsers || []), profile.id] }))
+    }
+  }
+
+  // Generate QR code for own profile
+  useEffect(() => {
+    if (isOwnProfile && profile) {
+      const url = `${window.location.origin}/messenger/profile/${profile.id}`
+      QRCode.toDataURL(url, { width: 200, color: { dark: '#00e475', light: '#0a0a0a' } })
+        .then(setQrUrl).catch(() => {})
+    }
+  }, [isOwnProfile, profile])
 
   if (loading) {
     return (
@@ -156,8 +182,8 @@ export default function ProfilePage() {
             <button onClick={handleMessage} className="flex-1 border border-outline-variant/30 text-on-surface py-3 rounded-full font-headline font-bold text-sm hover:bg-surface-container-high transition-colors">
               Message
             </button>
-            <button className="w-12 h-12 rounded-full border border-outline-variant/30 flex items-center justify-center hover:bg-surface-container-high transition-colors flex-shrink-0">
-              <span className="material-symbols-outlined text-lg">person_add</span>
+            <button onClick={handleBlock} className={`w-12 h-12 rounded-full border flex items-center justify-center transition-colors flex-shrink-0 ${isBlocked ? 'border-error/30 bg-error/10 text-error' : 'border-outline-variant/30 hover:bg-surface-container-high text-on-surface-variant'}`} title={isBlocked ? 'Unblock' : 'Block'}>
+              <span className="material-symbols-outlined text-lg">{isBlocked ? 'person_off' : 'block'}</span>
             </button>
           </div>
         )}
@@ -207,6 +233,21 @@ export default function ProfilePage() {
           ))}
         </div>
       </section>
+
+      {/* QR Code (own profile only) */}
+      {isOwnProfile && qrUrl && (
+        <section className="mb-8">
+          <h3 className="text-on-surface-variant text-xs font-medium uppercase tracking-wider mb-4">Share Profile</h3>
+          <div className="bg-surface-container border border-outline-variant/20 rounded-2xl p-6 flex flex-col items-center">
+            <img src={qrUrl} alt="Profile QR Code" className="w-40 h-40 rounded-xl mb-3" />
+            <p className="text-on-surface-variant text-sm mb-2">Scan to view profile</p>
+            <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/messenger/profile/${profile?.id}`); alert('Link copied!') }}
+              className="px-4 py-2 rounded-full bg-secondary/10 text-secondary text-sm font-medium hover:bg-secondary/20 transition-colors flex items-center gap-2">
+              <span className="material-symbols-outlined text-base">content_copy</span>Copy Link
+            </button>
+          </div>
+        </section>
+      )}
     </div>
   )
 }
