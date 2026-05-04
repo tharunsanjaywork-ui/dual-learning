@@ -79,7 +79,7 @@ export default function LoginPage() {
             ) : (
               <>
                 <div className="flex items-center gap-3 mb-2">
-                  <div className="w-10 h-10 rounded-xl gradient-primary flex items-center justify-center">
+                  <div className="w-10 h-10 rounded-xl gradient-primary flex items-center justify-center animate-zoom-bounce">
                     <span className="material-symbols-outlined text-white text-xl">auto_awesome</span>
                   </div>
                   <h1 className="font-headline text-2xl font-bold text-on-surface">DualZone</h1>
@@ -96,7 +96,7 @@ export default function LoginPage() {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4 animate-slide-up-fade">
             {/* Username (hidden if returning user) */}
             {!isReturningUser && (
               <div className="relative">

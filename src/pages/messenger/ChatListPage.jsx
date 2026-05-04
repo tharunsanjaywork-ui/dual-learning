@@ -80,7 +80,7 @@ export default function ChatListPage() {
 
           return (
             <button key={chat.id} onClick={() => openChat(chat)} onContextMenu={(e) => handleContextMenu(e, chat)}
-              className="w-full flex items-center gap-3 px-4 sm:px-6 py-3.5 hover:bg-surface-container-high/50 active:scale-[0.99] transition-all text-left">
+              className="w-full flex items-center gap-3 px-4 sm:px-6 py-3.5 hover:bg-surface-container-high/50 text-left card-interactive ripple mb-1 rounded-xl">
               <div className="relative flex-shrink-0">
                 <div className={`w-14 h-14 rounded-full overflow-hidden ${isMuted ? 'opacity-60 grayscale' : ''}`}>
                   {other?.profilePic ? <img src={other.profilePic} alt="" className="w-full h-full object-cover" /> : (

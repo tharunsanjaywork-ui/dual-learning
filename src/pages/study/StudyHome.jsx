@@ -64,13 +64,13 @@ export default function StudyHome() {
         <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iMjAiIGN5PSIyMCIgcj0iMSIgZmlsbD0icmdiYSgyNTUsMjU1LDI1NSwwLjEpIi8+PC9zdmc+')] opacity-20" />
         <div className="relative px-4 md:px-8 lg:px-16 py-10 md:py-16 flex flex-col md:flex-row items-center justify-between gap-6">
           <div className="flex-1">
-            <h1 className="font-headline text-2xl md:text-4xl lg:text-5xl font-extrabold text-white mb-2">
+            <h1 className="font-headline text-2xl md:text-4xl lg:text-5xl font-extrabold text-white mb-2 animate-hero-text">
               Welcome back, {userProfile?.displayName?.split(' ')[0] || 'Student'}!
             </h1>
             <p className="text-white/70 text-base md:text-lg">Continue your learning journey. Stay focused, stay consistent.</p>
           </div>
           <div className="glass rounded-2xl p-5 flex items-center gap-4 border border-white/20">
-            <div className="text-4xl">🔥</div>
+            <div className="text-4xl animate-fire">🔥</div>
             <div>
               <p className="text-white text-3xl font-headline font-extrabold">{streak}</p>
               <p className="text-white/60 text-sm">Day Streak</p>
@@ -83,12 +83,12 @@ export default function StudyHome() {
         {/* Quick Access Cards */}
         <section>
           <h2 className="font-headline text-xl md:text-2xl font-bold text-on-surface mb-5">Quick Access</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 stagger-children">
             {QUICK_ACCESS.map(item => (
               <Link
                 key={item.to}
                 to={item.to}
-                className="group bg-surface-container border border-outline-variant/20 rounded-2xl p-6 hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5 transition-all"
+                className="group bg-surface-container border border-outline-variant/20 rounded-2xl p-6 hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5 transition-all hover-lift"
               >
                 <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-4" style={{ backgroundColor: `${item.color}15` }}>
                   <span className="material-symbols-outlined text-2xl" style={{ color: item.color }}>{item.icon}</span>

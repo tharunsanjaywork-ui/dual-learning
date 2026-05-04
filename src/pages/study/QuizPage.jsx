@@ -107,12 +107,12 @@ export default function QuizPage() {
       <div className="px-4 md:px-8 lg:px-16 py-8">
         <h1 className="font-headline text-3xl md:text-5xl font-bold text-on-surface mb-2">Quiz Challenge</h1>
         <p className="text-on-surface-variant mb-8">Select an exam to begin your assessment</p>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 stagger-children">
           {EXAMS.map(exam => (
             <button
               key={exam.key}
               onClick={() => startQuiz(exam.key)}
-              className="group relative bg-surface-container border border-outline-variant/20 rounded-2xl p-6 text-left hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5 transition-all overflow-hidden"
+              className="group relative bg-surface-container border border-outline-variant/20 rounded-2xl p-6 text-left hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5 transition-all overflow-hidden card-interactive animate-zoom-in"
             >
               <span className="material-symbols-outlined absolute top-4 right-4 text-6xl opacity-10" style={{ color: exam.color }}>{exam.icon}</span>
               <div className="relative">
@@ -138,8 +138,17 @@ export default function QuizPage() {
         <div className="text-center mb-8">
           <span className="inline-block px-4 py-1.5 rounded-full bg-primary/10 text-primary text-sm font-medium mb-4">Assessment Complete</span>
 
+          {/* Confetti for high score */}
+          {score >= 7 && Array.from({ length: 10 }).map((_, i) => (
+            <div key={i} className="confetti-piece" style={{
+              left: `${10 + Math.random() * 80}%`,
+              backgroundColor: ['#a68cff', '#00e475', '#ff6b9d', '#ffd700', '#00bcd4'][i % 5],
+              animationDelay: `${i * 0.15}s`,
+            }} />
+          ))}
+
           {/* Score Ring */}
-          <div className="relative w-40 h-40 mx-auto mb-4">
+          <div className="relative w-40 h-40 mx-auto mb-4 animate-zoom-bounce">
             <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
               <circle cx="50" cy="50" r={radius} fill="none" className="stroke-surface-container-high" strokeWidth="6" />
               <circle cx="50" cy="50" r={radius} fill="none" className="stroke-primary" strokeWidth="6" strokeLinecap="round"
@@ -262,7 +271,7 @@ export default function QuizPage() {
                   key={i}
                   onClick={() => handleAnswer(i)}
                   disabled={showAnswer}
-                  className={`w-full flex items-center gap-4 p-4 rounded-xl text-left transition-all ${classes}`}
+                  className={`w-full flex items-center gap-4 p-4 rounded-xl text-left transition-all ${classes} ${showResult && isCorrect ? 'animate-option-correct' : ''} ${showResult && isSelected && !isCorrect ? 'animate-option-wrong' : ''}`}
                 >
                   <span className="w-8 h-8 rounded-lg bg-surface-container flex items-center justify-center text-sm font-bold flex-shrink-0">
                     {String.fromCharCode(65 + i)}

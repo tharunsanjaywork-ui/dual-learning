@@ -68,12 +68,12 @@ export default function SubjectPage({ subject }) {
       {/* Tab Content */}
       <div className="px-4 md:px-8 lg:px-16 py-8">
         {activeTab === 'Videos' && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-x-6 gap-y-10">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-x-6 gap-y-10 stagger-children">
             {videos.map(video => (
               <button
                 key={video.id}
                 onClick={() => handleVideoClick(video)}
-                className="group text-left"
+                className="group text-left card-interactive"
               >
                 {/* Thumbnail */}
                 <div className="relative aspect-video rounded-xl overflow-hidden mb-3 bg-surface-container">

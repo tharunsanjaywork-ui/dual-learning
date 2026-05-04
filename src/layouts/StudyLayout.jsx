@@ -28,6 +28,8 @@ export default function StudyLayout() {
   const [avatarOpen, setAvatarOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
 
+  const cameFromNotification = new URLSearchParams(window.location.search).get('from') === 'notification'
+
   const handleLogout = async () => {
     await logout()
     navigate('/login', { replace: true })
@@ -80,6 +82,7 @@ export default function StudyLayout() {
           </div>
 
           {/* Switch Button */}
+          {!cameFromNotification && (
           <button
             onClick={() => setSwitchOpen(true)}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium text-on-surface-variant hover:text-primary hover:bg-primary/10 transition-all"
@@ -88,6 +91,7 @@ export default function StudyLayout() {
             <span className="material-symbols-outlined text-lg">swap_horiz</span>
             <span className="hidden xl:inline">Switch</span>
           </button>
+          )}
 
           {/* Avatar */}
           <div className="relative">
@@ -143,6 +147,7 @@ export default function StudyLayout() {
         </NavLink>
         <div className="flex-1" />
         {/* Mobile Switch Button */}
+        {!cameFromNotification && (
         <button
           onClick={() => setSwitchOpen(true)}
           className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-medium text-on-surface-variant hover:text-primary hover:bg-primary/10 transition-all mr-1"
@@ -151,6 +156,7 @@ export default function StudyLayout() {
           <span className="material-symbols-outlined text-lg">swap_horiz</span>
           <span className="text-xs">Switch</span>
         </button>
+        )}
         {/* Mobile Avatar */}
         <button
           onClick={() => setAvatarOpen(!avatarOpen)}

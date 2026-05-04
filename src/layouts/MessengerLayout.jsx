@@ -17,6 +17,8 @@ export default function MessengerLayout() {
   const [searchQuery, setSearchQuery] = useState('')
   const [avatarOpen, setAvatarOpen] = useState(false)
 
+  const cameFromNotification = new URLSearchParams(window.location.search).get('from') === 'notification'
+
   const handleSwitch = () => {
     switchToStudy()
     navigate('/switching', { replace: true })
@@ -83,6 +85,7 @@ export default function MessengerLayout() {
           </NavLink>
 
           {/* Switch to Study */}
+          {!cameFromNotification && (
           <button
             onClick={handleSwitch}
             className="flex items-center gap-1 px-2 md:px-3 py-2 rounded-xl text-sm font-medium text-on-surface-variant hover:text-secondary hover:bg-secondary/10 transition-all"
@@ -91,6 +94,7 @@ export default function MessengerLayout() {
             <span className="material-symbols-outlined text-lg">swap_horiz</span>
             <span className="hidden lg:inline">Switch</span>
           </button>
+          )}
 
           {/* Avatar */}
           <div className="relative">
@@ -143,14 +147,14 @@ export default function MessengerLayout() {
 
       {/* Mobile Bottom Nav */}
       {!isInChat && (
-        <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-surface-container-low/90 backdrop-blur-xl border-t border-outline-variant/20 px-2 py-1">
-          <div className="flex items-center justify-around">
+        <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-surface-container-low/90 backdrop-blur-xl border-t border-outline-variant/20 px-2 py-1" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
+          <div className="flex items-center">
             {MOBILE_NAV.map(link => (
               <NavLink
                 key={link.to}
                 to={link.to}
                 className={({ isActive }) =>
-                  `flex flex-col items-center gap-0.5 px-3 py-2 rounded-xl transition-all ${
+                  `flex-1 flex flex-col items-center gap-0.5 px-1 py-2 rounded-xl transition-all ${
                     isActive ? 'text-secondary' : 'text-on-surface-variant'
                   }`
                 }

@@ -95,7 +95,7 @@ export default function NotificationsPage() {
           <p className="text-on-surface-variant text-sm">No new notifications at the moment</p>
         </div>
       ) : (
-        <div className="space-y-8">
+        <div className="space-y-8 stagger-children">
           {/* Follow Requests */}
           {followRequests.length > 0 && (
             <section>

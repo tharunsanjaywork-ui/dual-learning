@@ -110,14 +110,14 @@ export default function GroupChatPage() {
       {/* Chat Area */}
       <div className="flex-1 flex flex-col">
         {/* Top Bar */}
-        <div className="flex items-center gap-3 px-4 py-3 bg-surface-container-low/80 backdrop-blur-xl border-b border-outline-variant/20 flex-shrink-0">
-          <button onClick={() => navigate('/messenger/chats')} className="p-1 -ml-1">
+        <div className="flex items-center gap-2 px-3 py-2 bg-surface-container-low/80 backdrop-blur-xl border-b border-outline-variant/20 flex-shrink-0">
+          <button onClick={() => navigate('/messenger/chats')} className="p-1.5 -ml-1">
             <span className="material-symbols-outlined text-on-surface-variant">arrow_back</span>
           </button>
           <div className="w-10 h-10 rounded-full gradient-secondary flex items-center justify-center text-lg">{group.icon || '📚'}</div>
           <div className="flex-1 min-w-0">
             <button onClick={() => setShowInfo(!showInfo)} className="text-left">
-              <h3 className="text-on-surface font-medium text-sm truncate">{group.name || 'Group'}</h3>
+              <h3 className="text-on-surface font-medium text-sm truncate max-w-[120px] md:max-w-none">{group.name || 'Group'}</h3>
               <p className="text-secondary text-xs">{members.length} members</p>
             </button>
           </div>
@@ -165,9 +165,11 @@ export default function GroupChatPage() {
         </div>
       </div>
 
-      {/* Group Info Panel */}
+      {/* Group Info Panel — slide-in drawer on mobile */}
       {showInfo && (
-        <div className="w-80 border-l border-outline-variant/20 bg-surface-container-low overflow-y-auto hidden md:block animate-slide-up">
+        <>
+        <div className="fixed inset-0 bg-black/40 z-30 md:hidden" onClick={() => setShowInfo(false)} />
+        <div className="fixed inset-y-0 right-0 w-80 z-40 md:relative md:inset-auto md:z-auto border-l border-outline-variant/20 bg-surface-container-low overflow-y-auto transition-transform duration-300 animate-fade-up">
           <div className="p-6">
             <div className="flex flex-col items-center mb-6">
               <div className="w-20 h-20 rounded-full gradient-secondary flex items-center justify-center text-3xl mb-3">{group.icon || '📚'}</div>
@@ -218,6 +220,7 @@ export default function GroupChatPage() {
             </button>
           </div>
         </div>
+        </>
       )}
     </div>
   )

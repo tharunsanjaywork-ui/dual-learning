@@ -3,9 +3,80 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useChat } from '../../context/ChatContext'
 import { useAuth } from '../../context/AuthContext'
 import { db } from '../../lib/firebase'
-import { doc, getDoc } from 'firebase/firestore'
+import { doc, getDoc, collection, query, where, onSnapshot } from 'firebase/firestore'
 import { uploadToCloudinary, uploadBlobToCloudinary, getFileType } from '../../lib/cloudinary'
 import { searchGifs } from '../../lib/giphy'
+import CallScreen from '../../components/CallScreen'
+import IncomingCall from '../../components/IncomingCall'
+
+function AudioPlayer({ src }) {
+  const audioRef = useRef(null)
+  const [playing, setPlaying] = useState(false)
+  const [progress, setProgress] = useState(0)
+  const [duration, setDuration] = useState(0)
+  const [currentTime, setCurrentTime] = useState(0)
+
+  const togglePlay = () => {
+    if (!audioRef.current) return
+    if (playing) audioRef.current.pause()
+    else audioRef.current.play()
+    setPlaying(!playing)
+  }
+
+  const handleTimeUpdate = () => {
+    if (!audioRef.current) return
+    const pct = (audioRef.current.currentTime / audioRef.current.duration) * 100
+    setProgress(pct || 0)
+    setCurrentTime(audioRef.current.currentTime || 0)
+  }
+
+  const handleEnded = () => { setPlaying(false); setProgress(0); setCurrentTime(0) }
+
+  const handleSeek = (e) => {
+    if (!audioRef.current) return
+    const rect = e.currentTarget.getBoundingClientRect()
+    const pct = (e.clientX - rect.left) / rect.width
+    audioRef.current.currentTime = pct * audioRef.current.duration
+  }
+
+  const fmt = (s) => {
+    if (!s || isNaN(s)) return '0:00'
+    return `${Math.floor(s/60)}:${Math.floor(s%60).toString().padStart(2,'0')}`
+  }
+
+  const bars = [3,6,9,5,12,8,4,15,7,10,6,13,4,8,11,5,9,6,14,7]
+
+  return (
+    <div>
+      <p className="text-[10px] text-on-surface-variant/50 mb-1.5 font-medium tracking-wide uppercase">Voice Message</p>
+      <div className="flex items-center gap-3 min-w-[220px] max-w-[260px]">
+        <audio ref={audioRef} src={src} onTimeUpdate={handleTimeUpdate}
+          onLoadedMetadata={() => setDuration(audioRef.current?.duration || 0)}
+          onEnded={handleEnded} preload="metadata" />
+        <button onClick={togglePlay}
+          className="w-10 h-10 rounded-full bg-secondary/20 border border-secondary/30 flex items-center justify-center flex-shrink-0 hover:bg-secondary/30 active:scale-90 transition-all">
+          <span className="material-symbols-outlined text-secondary text-xl filled">{playing ? 'pause' : 'play_arrow'}</span>
+        </button>
+        <div className="flex-1">
+          <div className="flex items-end gap-0.5 h-8 cursor-pointer mb-1" onClick={handleSeek}>
+            {bars.map((h, i) => {
+              const isPlayed = (i / bars.length)*100 <= progress
+              return (
+                <div key={i} className="flex-1 rounded-full transition-all duration-150"
+                  style={{ height: `${h}px`, backgroundColor: isPlayed ? 'var(--secondary)' : 'rgba(170,171,178,0.25)' }} />
+              )
+            })}
+          </div>
+          <div className="flex justify-between">
+            <span className="text-[10px] text-on-surface-variant/70">{fmt(currentTime)}</span>
+            <span className="text-[10px] text-on-surface-variant/70">{fmt(duration)}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 
 const EMOJI_CATEGORIES = {
   '😀': { name: 'Smileys', emojis: ['😀','😃','😄','😁','😆','😅','🤣','😂','🙂','🙃','😉','😊','😇','🥰','😍','🤩','😘','😗','😚','😙','🥲','😋','😛','😜','🤪','😝','🤑','🤗','🤭','🤫','🤔','🫡','🤐','🤨','😐','😑','😶','🫥','😏','😒','🙄','😬','🤥','😌','😔','😪','🤤','😴','😷','🤒','🤕','🤢','🤮','🥵','🥶','🥴','😵','🤯','🤠','🥳','🥸','😎','🤓','🧐','😕','🫤','😟','🙁','😮','😯','😲','😳','🥺','🥹','😦','😧','😨','😰','😥','😢','😭','😱','😖','😣','😞','😓','😩','😫','🥱','😤','😡','😠','🤬','😈','👿','💀','☠️','💩','🤡','👹','👺','👻','👽','👾','🤖'] },
@@ -27,6 +98,7 @@ export default function ChatPage() {
   const { messages, setActiveChat, sendMessage, markAsSeen, addReaction, deleteMessage, editMessage, toggleStarMessage, forwardMessage, typingUsers, setTyping, chats } = useChat()
   const { userProfile } = useAuth()
   const messagesEndRef = useRef(null)
+  const messageRefs = useRef({})
   const inputRef = useRef(null)
   const mediaRecorderRef = useRef(null)
   const audioChunksRef = useRef([])
@@ -52,6 +124,16 @@ export default function ChatPage() {
   const [editText, setEditText] = useState('')
   const [showReactPicker, setShowReactPicker] = useState(null)
   const [forwardModal, setForwardModal] = useState(null)
+  const [activeCall, setActiveCall] = useState(null)
+  const [incomingCall, setIncomingCall] = useState(null)
+
+  const scrollToMessage = (msgId) => {
+    const el = messageRefs.current[msgId]
+    if (!el) return
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    el.classList.add('msg-highlight')
+    setTimeout(() => el.classList.remove('msg-highlight'), 1500)
+  }
 
   useEffect(() => {
     setActiveChat(chatId)
@@ -80,6 +162,25 @@ export default function ChatPage() {
       .map(m => m.id)
     if (unseen.length) markAsSeen(chatId, unseen)
   }, [messages, userProfile?.id, chatId])
+
+  // Listen for incoming calls
+  useEffect(() => {
+    if (!userProfile?.id) return
+    const q = query(
+      collection(db, 'calls'),
+      where('calleeId', '==', userProfile.id),
+      where('status', '==', 'ringing')
+    )
+    const unsub = onSnapshot(q, (snap) => {
+      if (!snap.empty) {
+        const callDoc = snap.docs[0]
+        setIncomingCall({ callId: callDoc.id, callerId: callDoc.data().callerId })
+      } else {
+        setIncomingCall(null)
+      }
+    })
+    return unsub
+  }, [userProfile?.id])
 
   const handleSend = async () => {
     const trimmed = text.trim()
@@ -258,15 +359,7 @@ export default function ChatPage() {
       case 'image':
         return <img src={msg.fileURL} alt="" className="max-w-[280px] rounded-xl cursor-pointer hover:opacity-90 transition-opacity" onClick={() => window.open(msg.fileURL)} />
       case 'audio':
-        return (
-          <div className="min-w-[200px] max-w-[280px]">
-            <audio controls src={msg.fileURL} className="w-full rounded-xl" style={{height: '40px'}} preload="metadata" />
-            <div className="flex items-center gap-2 mt-1 px-1">
-              <span className="text-[10px] opacity-50">{msg.fileName || 'Voice message'}</span>
-              {msg.fileSize && <span className="text-[10px] opacity-40">{(msg.fileSize / 1024).toFixed(0)} KB</span>}
-            </div>
-          </div>
-        )
+        return <AudioPlayer src={msg.fileURL} />
       case 'video':
         return (
           <div className="relative max-w-[280px] rounded-xl overflow-hidden cursor-pointer" onClick={() => window.open(msg.fileURL)}>
@@ -312,27 +405,43 @@ export default function ChatPage() {
     <div className="flex flex-col h-[calc(100vh-3.5rem)] md:h-[calc(100vh-4rem)] animate-page-enter">
       {/* Chat Top Bar */}
       <div className="flex items-center gap-3 px-4 py-3 bg-surface-container-low/80 backdrop-blur-xl border-b border-outline-variant/20 flex-shrink-0">
-        <button onClick={() => navigate('/messenger/chats')} className="p-1 -ml-1">
+        <button onClick={() => navigate('/messenger/chats')} className="p-1.5 -ml-1">
           <span className="material-symbols-outlined text-on-surface-variant">arrow_back</span>
         </button>
-        <div className="relative">
-          <div className="w-10 h-10 rounded-full overflow-hidden">
-            {otherUser?.profilePic ? (
-              <img src={otherUser.profilePic} alt="" className="w-full h-full object-cover" />
-            ) : (
-              <div className="w-full h-full bg-surface-container-highest flex items-center justify-center">
-                <span className="material-symbols-outlined text-outline">person</span>
-              </div>
-            )}
+        <button
+          onClick={() => otherUser?.id && navigate(`/messenger/profile/${otherUser.id}`)}
+          className="flex items-center gap-3 flex-1 min-w-0 hover:opacity-80 transition-opacity cursor-pointer disabled:cursor-default"
+          disabled={!otherUser}
+        >
+          <div className="relative flex-shrink-0">
+            <div className="w-10 h-10 rounded-full overflow-hidden">
+              {otherUser?.profilePic ? (
+                <img src={otherUser.profilePic} alt="" className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full bg-surface-container-highest flex items-center justify-center">
+                  <span className="material-symbols-outlined text-outline">person</span>
+                </div>
+              )}
+            </div>
+            {otherUser?.isOnline && <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-secondary rounded-full border-2 border-surface-container-low online-dot-animated" />}
           </div>
-          {otherUser?.isOnline && <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-secondary rounded-full border-2 border-surface-container-low" />}
-        </div>
-        <div className="flex-1 min-w-0">
-          <h3 className="text-on-surface font-medium text-sm truncate">{otherUser?.displayName || 'Loading...'}</h3>
-          <p className="text-on-surface-variant text-xs">{Object.keys(typingUsers).length > 0 ? <span className="text-secondary animate-pulse">typing...</span> : otherUser?.isOnline ? 'Online' : 'Offline'}</p>
-        </div>
+          <div className="flex-1 min-w-0 text-left">
+            <h3 className="text-on-surface font-medium text-sm truncate">{otherUser?.displayName || 'Loading...'}</h3>
+            <p className="text-on-surface-variant text-xs">
+              {Object.keys(typingUsers).length > 0
+                ? <span className="text-secondary animate-pulse flex items-center gap-1">
+                    <span className="typing-dot w-1 h-1 rounded-full bg-secondary inline-block" />
+                    <span className="typing-dot w-1 h-1 rounded-full bg-secondary inline-block" />
+                    <span className="typing-dot w-1 h-1 rounded-full bg-secondary inline-block" />
+                    typing
+                  </span>
+                : otherUser?.isOnline ? 'Online' : 'Offline'
+              }
+            </p>
+          </div>
+        </button>
         <div className="flex items-center gap-1">
-          <button className="p-2 rounded-xl text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-all">
+          <button onClick={() => { const id = `${userProfile.id}_${otherUser.id}_${Date.now()}`; setActiveCall({ callId: id, isOutgoing: true }) }} className="p-2 rounded-xl text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-all">
             <span className="material-symbols-outlined text-xl">call</span>
           </button>
           <button className="p-2 rounded-xl text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-all hidden md:flex">
@@ -356,14 +465,30 @@ export default function ChatPage() {
           const isMine = msg.senderId === userProfile?.id
 
           return (
-            <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'} ${isMine ? 'animate-message-right' : 'animate-message-left'}`} onContextMenu={(e) => openContextMenu(e, msg)}>
+            <div key={msg.id} ref={el => { if (el) messageRefs.current[msg.id] = el }} className={`flex ${isMine ? 'justify-end' : 'justify-start'} ${isMine ? 'animate-message-right' : 'animate-message-left'}`} onContextMenu={(e) => openContextMenu(e, msg)}>
               <div className={`max-w-[75%] md:max-w-[60%] ${isMine ? 'order-1' : ''}`}>
                 {/* Reply preview */}
-                {msg.replyTo && (
-                  <div className="bg-white/5 rounded-t-xl px-3 py-1.5 border-l-2 border-primary mb-0.5">
-                    <p className="text-xs text-on-surface-variant truncate">Replied to a message</p>
-                  </div>
-                )}
+                {msg.replyTo && (() => {
+                  const original = messages.find(m => m.id === msg.replyTo)
+                  return (
+                    <button
+                      onClick={() => scrollToMessage(msg.replyTo)}
+                      className="w-full text-left bg-black/20 rounded-xl px-3 py-2 mb-1.5 border-l-2 border-secondary hover:bg-black/30 transition-colors"
+                    >
+                      <p className="text-secondary text-[10px] font-semibold mb-0.5">
+                        {original?.senderId === userProfile?.id ? 'You' : otherUser?.displayName || 'User'}
+                      </p>
+                      <p className="text-on-surface-variant text-xs truncate">
+                        {original?.type === 'image' ? '📷 Photo'
+                         : original?.type === 'audio' ? '🎤 Voice message'
+                         : original?.type === 'video' ? '🎬 Video'
+                         : original?.type === 'file' ? '📎 File'
+                         : original?.type === 'gif' ? '🎞 GIF'
+                         : original?.content || 'Message'}
+                      </p>
+                    </button>
+                  )
+                })()}
 
                 <div className={`rounded-2xl px-4 py-2.5 ${
                   isMine
@@ -399,13 +524,19 @@ export default function ChatPage() {
 
       {/* Reply Preview */}
       {replyTo && (
-        <div className="px-4 py-2 bg-surface-container border-t border-outline-variant/20 flex items-center gap-3">
-          <div className="w-1 h-8 bg-primary rounded-full" />
+        <div className="px-4 py-2 bg-surface-container border-t border-outline-variant/20 flex items-center gap-3 animate-fade-up">
+          <div className="w-1 h-10 bg-secondary rounded-full flex-shrink-0" />
           <div className="flex-1 min-w-0">
-            <p className="text-primary text-xs font-medium">Reply to message</p>
-            <p className="text-on-surface-variant text-xs truncate">{replyTo.content}</p>
+            <p className="text-secondary text-xs font-semibold">
+              Replying to {replyTo.senderId === userProfile?.id ? 'yourself' : otherUser?.displayName}
+            </p>
+            <p className="text-on-surface-variant text-xs truncate">
+              {replyTo.type === 'audio' ? '🎤 Voice message'
+               : replyTo.type === 'image' ? '📷 Photo'
+               : replyTo.content}
+            </p>
           </div>
-          <button onClick={() => setReplyTo(null)}>
+          <button onClick={() => setReplyTo(null)} className="p-1 hover:bg-surface-container-high rounded-lg">
             <span className="material-symbols-outlined text-outline text-lg">close</span>
           </button>
         </div>
@@ -612,8 +743,8 @@ export default function ChatPage() {
 
       {/* Edit Modal */}
       {editingMsg && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setEditingMsg(null)}>
-          <div className="glass-strong rounded-2xl p-6 w-full max-w-md" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-modal-backdrop" onClick={() => setEditingMsg(null)}>
+          <div className="glass-strong rounded-2xl p-6 w-full max-w-md animate-modal-content" onClick={e => e.stopPropagation()}>
             <h3 className="text-on-surface font-bold mb-3">Edit Message</h3>
             <textarea value={editText} onChange={e => setEditText(e.target.value)} className="w-full bg-surface-container-high border border-outline-variant/30 rounded-xl px-4 py-3 text-sm text-on-surface resize-none" rows={3} />
             <div className="flex gap-2 mt-3">
@@ -626,8 +757,8 @@ export default function ChatPage() {
 
       {/* Forward Modal */}
       {forwardModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setForwardModal(null)}>
-          <div className="glass-strong rounded-2xl p-6 w-full max-w-md max-h-96 overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-modal-backdrop" onClick={() => setForwardModal(null)}>
+          <div className="glass-strong rounded-2xl p-6 w-full max-w-md max-h-96 overflow-y-auto animate-modal-content" onClick={e => e.stopPropagation()}>
             <h3 className="text-on-surface font-bold mb-3">Forward to...</h3>
             {chats.filter(c => c.id !== chatId).map(c => (
               <button key={c.id} onClick={() => handleForwardTo(c.id)} className="flex items-center gap-3 w-full px-3 py-3 rounded-xl hover:bg-surface-container-high transition-colors">
@@ -640,6 +771,27 @@ export default function ChatPage() {
             {chats.filter(c => c.id !== chatId).length === 0 && <p className="text-on-surface-variant text-sm text-center py-4">No other chats to forward to</p>}
           </div>
         </div>
+      )}
+
+      {/* Call Overlays */}
+      {activeCall && (
+        <CallScreen
+          callId={activeCall.callId}
+          otherUser={otherUser}
+          isOutgoing={activeCall.isOutgoing}
+          onEnd={() => setActiveCall(null)}
+        />
+      )}
+      {incomingCall && !activeCall && (
+        <IncomingCall
+          callId={incomingCall.callId}
+          callerId={incomingCall.callerId}
+          onAccept={(callId, caller) => {
+            setIncomingCall(null)
+            setActiveCall({ callId, isOutgoing: false })
+          }}
+          onReject={() => setIncomingCall(null)}
+        />
       )}
     </div>
   )

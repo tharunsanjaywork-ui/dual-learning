@@ -1,5 +1,9 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react'
-import { db } from '../lib/firebase'
+import {
+  primaryDb, secondaryDb,
+  getMessagesDb, getMessagesDbName,
+  checkAndSwitchMessagesDb, trackFirestoreWrite,
+} from '../lib/firebase'
 import {
   collection, query, where, orderBy, onSnapshot, addDoc, updateDoc, deleteDoc,
   doc, getDocs, serverTimestamp, limit, arrayUnion, arrayRemove, setDoc, getDoc,
@@ -22,12 +26,12 @@ export function ChatProvider({ children }) {
   const [typingUsers, setTypingUsers] = useState({})
   const [onlineUsers, setOnlineUsers] = useState({})
 
-  // Listen to user's chats
+  // Listen to user's chats — ALWAYS from primary
   useEffect(() => {
     if (!userProfile?.id) return
 
     const q = query(
-      collection(db, 'chats'),
+      collection(primaryDb, 'chats'),
       where('participants', 'array-contains', userProfile.id)
     )
 
@@ -35,57 +39,88 @@ export function ChatProvider({ children }) {
       const chatList = []
       for (const chatDoc of snapshot.docs) {
         const data = chatDoc.data()
-        // Get other participant's profile
         const otherId = data.participants.find(id => id !== userProfile.id)
         let otherUser = null
         if (otherId) {
-          const userDoc = await getDoc(doc(db, 'users', otherId))
+          const userDoc = await getDoc(doc(primaryDb, 'users', otherId))
           if (userDoc.exists()) otherUser = { id: otherId, ...userDoc.data() }
         }
         chatList.push({ id: chatDoc.id, ...data, otherUser })
       }
-      
-      // Sort in memory to avoid requiring Firebase composite indexes
+
       chatList.sort((a, b) => {
         const timeA = a.lastMessageAt?.toMillis ? a.lastMessageAt.toMillis() : 0
         const timeB = b.lastMessageAt?.toMillis ? b.lastMessageAt.toMillis() : 0
         return timeB - timeA
       })
-      
+
       setChats(chatList)
     })
 
     return unsub
   }, [userProfile?.id])
 
-  // Listen to messages in active chat
+  // Listen to messages — read from BOTH databases and merge
   useEffect(() => {
     if (!activeChat) { setMessages([]); return }
 
-    const q = query(
-      collection(db, 'messages', activeChat, 'msgs'),
+    const primaryMessages = {}
+    const secondaryMessages = {}
+
+    // Listen to primary
+    const q1 = query(
+      collection(primaryDb, 'messages', activeChat, 'msgs'),
       orderBy('createdAt', 'asc'),
       limit(100)
     )
-
-    const unsub = onSnapshot(q, (snapshot) => {
-      const msgs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }))
-      setMessages(msgs)
+    const unsub1 = onSnapshot(q1, (snap) => {
+      // Clear and rebuild
+      Object.keys(primaryMessages).forEach(k => delete primaryMessages[k])
+      snap.docs.forEach(d => {
+        primaryMessages[d.id] = { id: d.id, ...d.data(), _source: 'primary' }
+      })
+      mergeAndSetMessages()
     })
 
-    return unsub
+    // Also listen to secondary (even if currently writing to primary)
+    const q2 = query(
+      collection(secondaryDb, 'messages', activeChat, 'msgs'),
+      orderBy('createdAt', 'asc'),
+      limit(100)
+    )
+    const unsub2 = onSnapshot(q2, (snap) => {
+      Object.keys(secondaryMessages).forEach(k => delete secondaryMessages[k])
+      snap.docs.forEach(d => {
+        secondaryMessages[d.id] = { id: d.id, ...d.data(), _source: 'secondary' }
+      })
+      mergeAndSetMessages()
+    })
+
+    function mergeAndSetMessages() {
+      const allMsgs = [
+        ...Object.values(primaryMessages),
+        ...Object.values(secondaryMessages)
+      ]
+      allMsgs.sort((a, b) => {
+        const tA = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0
+        const tB = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0
+        return tA - tB
+      })
+      setMessages(allMsgs)
+    }
+
+    return () => { unsub1(); unsub2() }
   }, [activeChat])
 
-  // Listen to typing indicator for active chat
+  // Listen to typing indicator — always primary
   useEffect(() => {
     if (!activeChat || !userProfile?.id) return
 
-    const typingRef = doc(db, 'chats', activeChat)
+    const typingRef = doc(primaryDb, 'chats', activeChat)
     const unsub = onSnapshot(typingRef, (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.data()
         const typing = data.typing || {}
-        // Remove own typing status and expired ones (> 5 seconds)
         const now = Date.now()
         const activeTypers = {}
         Object.entries(typing).forEach(([uid, ts]) => {
@@ -103,21 +138,20 @@ export function ChatProvider({ children }) {
     return unsub
   }, [activeChat, userProfile?.id])
 
-  // Listen to online status of users
+  // Listen to online status — always primary
   useEffect(() => {
     if (!userProfile?.id) return
 
     const following = userProfile.following || []
     if (following.length === 0) return
 
-    // Batch into groups of 10 (Firestore where-in limit)
     const batches = []
     for (let i = 0; i < following.length; i += 10) {
       batches.push(following.slice(i, i + 10))
     }
 
     const unsubs = batches.map(batch => {
-      const q = query(collection(db, 'users'), where('__name__', 'in', batch))
+      const q = query(collection(primaryDb, 'users'), where('__name__', 'in', batch))
       return onSnapshot(q, (snapshot) => {
         const statuses = {}
         snapshot.docs.forEach(d => {
@@ -130,11 +164,11 @@ export function ChatProvider({ children }) {
     return () => unsubs.forEach(u => u())
   }, [userProfile?.id, userProfile?.following])
 
-  // Set typing status
+  // Set typing status — always primary
   const setTyping = useCallback(async (chatId, isTyping) => {
     if (!userProfile?.id || !chatId) return
     try {
-      await updateDoc(doc(db, 'chats', chatId), {
+      await updateDoc(doc(primaryDb, 'chats', chatId), {
         [`typing.${userProfile.id}`]: isTyping ? serverTimestamp() : null,
       })
     } catch {
@@ -142,9 +176,13 @@ export function ChatProvider({ children }) {
     }
   }, [userProfile?.id])
 
-  // Send a message
+  // Send a message — uses smart router
   const sendMessage = useCallback(async (chatId, message) => {
     if (!userProfile?.id) return
+
+    // Check storage and possibly switch db for messages
+    await checkAndSwitchMessagesDb()
+    const messagesDb = getMessagesDb()
 
     const msgData = {
       senderId: userProfile.id,
@@ -163,28 +201,47 @@ export function ChatProvider({ children }) {
       isStarred: false,
       disappearsAt: null,
       createdAt: serverTimestamp(),
+      _dbSource: getMessagesDbName(),
     }
 
-    await addDoc(collection(db, 'messages', chatId, 'msgs'), msgData)
+    // Write message to correct db
+    const ref = await addDoc(
+      collection(messagesDb, 'messages', chatId, 'msgs'),
+      msgData
+    )
 
-    // Update chat's last message
-    await updateDoc(doc(db, 'chats', chatId), {
-      lastMessage: message.content || `[${message.type}]`,
-      lastMessageAt: serverTimestamp(),
-    })
+    // Track estimated size for storage monitoring
+    const estimatedSize = JSON.stringify(msgData).length + 200
+    trackFirestoreWrite(estimatedSize)
+
+    // Always update chat metadata in PRIMARY db
+    await setDoc(
+      doc(primaryDb, 'chats', chatId),
+      {
+        participants: [userProfile.id,
+          chatId.split('_').find(id => id !== userProfile.id)],
+        lastMessage: message.type === 'text'
+          ? (message.content || '').substring(0, 100)
+          : `📎 ${message.type}`,
+        lastMessageAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    )
 
     // Clear typing
     setTyping(chatId, false)
+    return ref
   }, [userProfile?.id, setTyping])
 
-  // Create or get a chat with another user
+  // Create or get a chat — always primary
   const getOrCreateChat = useCallback(async (otherUserId) => {
     if (!userProfile?.id) return null
 
     const participants = [userProfile.id, otherUserId].sort()
     const chatId = participants.join('_')
 
-    const chatRef = doc(db, 'chats', chatId)
+    const chatRef = doc(primaryDb, 'chats', chatId)
     const chatDoc = await getDoc(chatRef)
 
     if (!chatDoc.exists()) {
@@ -205,63 +262,112 @@ export function ChatProvider({ children }) {
     return chatId
   }, [userProfile?.id])
 
-  // Mark messages as seen
+  // Mark messages as seen — uses source db
   const markAsSeen = useCallback(async (chatId, messageIds) => {
     if (!userProfile?.id) return
     for (const msgId of messageIds) {
-      await updateDoc(doc(db, 'messages', chatId, 'msgs', msgId), {
-        seen: arrayUnion(userProfile.id),
-      }).catch(() => {})
+      // Try both databases
+      try {
+        await updateDoc(doc(primaryDb, 'messages', chatId, 'msgs', msgId), {
+          seen: arrayUnion(userProfile.id),
+        })
+      } catch {
+        try {
+          await updateDoc(doc(secondaryDb, 'messages', chatId, 'msgs', msgId), {
+            seen: arrayUnion(userProfile.id),
+          })
+        } catch { /* ignore */ }
+      }
     }
   }, [userProfile?.id])
 
-  // Add reaction to message
+  // Add reaction — try both dbs
   const addReaction = useCallback(async (chatId, messageId, emoji) => {
     if (!userProfile?.id) return
-    const msgRef = doc(db, 'messages', chatId, 'msgs', messageId)
-    // First remove any existing reaction from this user
-    const msgDoc = await getDoc(msgRef)
-    if (msgDoc.exists()) {
-      const existingReactions = msgDoc.data().reactions || []
-      const withoutMine = existingReactions.filter(r => r.uid !== userProfile.id)
-      withoutMine.push({ uid: userProfile.id, emoji })
-      await updateDoc(msgRef, { reactions: withoutMine })
+
+    const tryDb = async (dbRef) => {
+      const msgRef = doc(dbRef, 'messages', chatId, 'msgs', messageId)
+      const msgDoc = await getDoc(msgRef)
+      if (msgDoc.exists()) {
+        const existingReactions = msgDoc.data().reactions || []
+        const withoutMine = existingReactions.filter(r => r.uid !== userProfile.id)
+        withoutMine.push({ uid: userProfile.id, emoji })
+        await updateDoc(msgRef, { reactions: withoutMine })
+        return true
+      }
+      return false
+    }
+
+    if (!(await tryDb(primaryDb))) {
+      await tryDb(secondaryDb)
     }
   }, [userProfile?.id])
 
-  // Delete message
+  // Delete message — try both dbs
   const deleteMessage = useCallback(async (chatId, messageId, forEveryone = false) => {
-    if (forEveryone) {
-      await updateDoc(doc(db, 'messages', chatId, 'msgs', messageId), {
-        isDeleted: true,
-        content: 'This message was deleted',
-        fileURL: '',
-      })
-    } else {
-      // For "delete for me" — we'd need a deletedFor array, simplified here
-      await updateDoc(doc(db, 'messages', chatId, 'msgs', messageId), {
-        [`deletedFor.${userProfile?.id}`]: true,
-      })
+    const tryDb = async (dbRef) => {
+      try {
+        const msgRef = doc(dbRef, 'messages', chatId, 'msgs', messageId)
+        const msgDoc = await getDoc(msgRef)
+        if (!msgDoc.exists()) return false
+        if (forEveryone) {
+          await updateDoc(msgRef, {
+            isDeleted: true,
+            content: 'This message was deleted',
+            fileURL: '',
+          })
+        } else {
+          await updateDoc(msgRef, {
+            [`deletedFor.${userProfile?.id}`]: true,
+          })
+        }
+        return true
+      } catch { return false }
+    }
+
+    if (!(await tryDb(primaryDb))) {
+      await tryDb(secondaryDb)
     }
   }, [userProfile?.id])
 
-  // Edit message (2-min window enforced in UI)
+  // Edit message — try both dbs
   const editMessage = useCallback(async (chatId, messageId, newContent) => {
-    await updateDoc(doc(db, 'messages', chatId, 'msgs', messageId), {
-      content: newContent,
-      isEdited: true,
-      editedAt: serverTimestamp(),
-    })
+    const tryDb = async (dbRef) => {
+      try {
+        const msgRef = doc(dbRef, 'messages', chatId, 'msgs', messageId)
+        const msgDoc = await getDoc(msgRef)
+        if (!msgDoc.exists()) return false
+        await updateDoc(msgRef, {
+          content: newContent,
+          isEdited: true,
+          editedAt: serverTimestamp(),
+        })
+        return true
+      } catch { return false }
+    }
+
+    if (!(await tryDb(primaryDb))) {
+      await tryDb(secondaryDb)
+    }
   }, [])
 
-  // Star/unstar message
+  // Star/unstar message — try both dbs
   const toggleStarMessage = useCallback(async (chatId, messageId, isStarred) => {
-    await updateDoc(doc(db, 'messages', chatId, 'msgs', messageId), {
-      isStarred: !isStarred,
-    })
+    const tryDb = async (dbRef) => {
+      try {
+        await updateDoc(doc(dbRef, 'messages', chatId, 'msgs', messageId), {
+          isStarred: !isStarred,
+        })
+        return true
+      } catch { return false }
+    }
+
+    if (!(await tryDb(primaryDb))) {
+      await tryDb(secondaryDb)
+    }
   }, [])
 
-  // Forward message
+  // Forward message — uses sendMessage (which uses router)
   const forwardMessage = useCallback(async (targetChatId, originalMsg) => {
     if (!userProfile?.id) return
     await sendMessage(targetChatId, {
@@ -274,45 +380,45 @@ export function ChatProvider({ children }) {
     })
   }, [userProfile?.id, sendMessage])
 
-  // Pin/unpin chat
+  // Pin/unpin chat — always primary
   const togglePinChat = useCallback(async (chatId, isPinned) => {
     if (!userProfile?.id) return
-    await updateDoc(doc(db, 'chats', chatId), {
+    await updateDoc(doc(primaryDb, 'chats', chatId), {
       pinnedBy: isPinned ? arrayRemove(userProfile.id) : arrayUnion(userProfile.id),
     })
   }, [userProfile?.id])
 
-  // Mute/unmute chat
+  // Mute/unmute chat — always primary
   const toggleMuteChat = useCallback(async (chatId, isMuted) => {
     if (!userProfile?.id) return
-    await updateDoc(doc(db, 'chats', chatId), {
+    await updateDoc(doc(primaryDb, 'chats', chatId), {
       mutedBy: isMuted ? arrayRemove(userProfile.id) : arrayUnion(userProfile.id),
     })
   }, [userProfile?.id])
 
-  // Archive/unarchive chat
+  // Archive/unarchive chat — always primary
   const toggleArchiveChat = useCallback(async (chatId, isArchived) => {
     if (!userProfile?.id) return
-    await updateDoc(doc(db, 'chats', chatId), {
+    await updateDoc(doc(primaryDb, 'chats', chatId), {
       archivedBy: isArchived ? arrayRemove(userProfile.id) : arrayUnion(userProfile.id),
     })
   }, [userProfile?.id])
 
-  // Set chat wallpaper
+  // Set chat wallpaper — always primary
   const setChatWallpaper = useCallback(async (chatId, wallpaper) => {
-    await updateDoc(doc(db, 'chats', chatId), { wallpaper })
+    await updateDoc(doc(primaryDb, 'chats', chatId), { wallpaper })
   }, [])
 
-  // Set nickname
+  // Set nickname — always primary
   const setNickname = useCallback(async (chatId, userId, nickname) => {
-    await updateDoc(doc(db, 'chats', chatId), {
+    await updateDoc(doc(primaryDb, 'chats', chatId), {
       [`nicknames.${userId}`]: nickname,
     })
   }, [])
 
-  // Set disappearing messages timer
+  // Set disappearing messages — always primary
   const setDisappearingMessages = useCallback(async (chatId, duration) => {
-    await updateDoc(doc(db, 'chats', chatId), {
+    await updateDoc(doc(primaryDb, 'chats', chatId), {
       disappearingMessages: { enabled: duration > 0, duration },
     })
   }, [])
