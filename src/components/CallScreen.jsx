@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
 import { db } from '../lib/firebase'
-import { doc, setDoc, onSnapshot, updateDoc, collection, addDoc, serverTimestamp } from 'firebase/firestore'
+import { doc, setDoc, onSnapshot, updateDoc, collection, addDoc, getDoc, serverTimestamp } from 'firebase/firestore'
 import { createPeerConnection, getLocalStream } from '../lib/webrtc'
 
-export default function CallScreen({ callId, otherUser, onEnd, isOutgoing }) {
-  const [status, setStatus] = useState(isOutgoing ? 'calling' : 'connected')
+export default function CallScreen({ callId, otherUser, onEnd, isOutgoing, currentUserId }) {
+  const [status, setStatus] = useState(isOutgoing ? 'calling' : 'connecting')
   const [duration, setDuration] = useState(0)
   const [muted, setMuted] = useState(false)
   const [speakerOn, setSpeakerOn] = useState(false)
@@ -12,9 +12,14 @@ export default function CallScreen({ callId, otherUser, onEnd, isOutgoing }) {
   const localStreamRef = useRef(null)
   const timerRef = useRef(null)
   const remoteAudioRef = useRef(null)
+  const unsubsRef = useRef([])
 
   useEffect(() => {
-    startCall()
+    if (isOutgoing) {
+      startOutgoingCall()
+    } else {
+      answerIncomingCall()
+    }
     return () => cleanup()
   }, [])
 
@@ -31,75 +36,171 @@ export default function CallScreen({ callId, otherUser, onEnd, isOutgoing }) {
     return `${m}:${sec.toString().padStart(2, '0')}`
   }
 
-  const startCall = async () => {
+  // ═══ OUTGOING CALL (Caller side) ═══
+  const startOutgoingCall = async () => {
     try {
       const stream = await getLocalStream()
       localStreamRef.current = stream
       const pc = createPeerConnection()
       pcRef.current = pc
 
+      // Add local audio tracks to peer connection
       stream.getTracks().forEach(t => pc.addTrack(t, stream))
 
+      // When we receive remote audio, play it
       pc.ontrack = (e) => {
-        if (remoteAudioRef.current) {
+        if (remoteAudioRef.current && e.streams[0]) {
           remoteAudioRef.current.srcObject = e.streams[0]
         }
       }
 
-      if (isOutgoing) {
-        const offer = await pc.createOffer()
-        await pc.setLocalDescription(offer)
+      // Send ICE candidates to Firestore
+      pc.onicecandidate = async (e) => {
+        if (e.candidate) {
+          try {
+            await addDoc(collection(db, 'calls', callId, 'callerCandidates'), e.candidate.toJSON())
+          } catch (err) { console.warn('Failed to send caller candidate:', err) }
+        }
+      }
 
-        await setDoc(doc(db, 'calls', callId), {
-          offer: { type: offer.type, sdp: offer.sdp },
-          callerId: otherUser?.id ? callId.split('_')[0] : 'me',
-          calleeId: otherUser?.id,
-          status: 'ringing',
-          createdAt: serverTimestamp(),
-        })
+      // Create and send offer
+      const offer = await pc.createOffer()
+      await pc.setLocalDescription(offer)
 
-        const unsub = onSnapshot(doc(db, 'calls', callId), async (snap) => {
-          const data = snap.data()
-          if (!data) return
-          if (data.answer && !pc.currentRemoteDescription) {
+      await setDoc(doc(db, 'calls', callId), {
+        offer: { type: offer.type, sdp: offer.sdp },
+        callerId: currentUserId,
+        calleeId: otherUser?.id,
+        status: 'ringing',
+        createdAt: serverTimestamp(),
+      })
+
+      // Listen for answer from callee
+      const unsub1 = onSnapshot(doc(db, 'calls', callId), async (snap) => {
+        const data = snap.data()
+        if (!data) return
+        if (data.answer && !pc.currentRemoteDescription) {
+          try {
             await pc.setRemoteDescription(new RTCSessionDescription(data.answer))
             setStatus('connected')
-          }
-          if (data.status === 'ended') {
-            unsub()
-            cleanup()
-            onEnd()
-          }
-        })
-
-        pc.onicecandidate = async (e) => {
-          if (e.candidate) {
-            await addDoc(collection(db, 'calls', callId, 'callerCandidates'), e.candidate.toJSON())
-          }
+          } catch (err) { console.error('Failed to set remote description:', err) }
         }
+        if (data.status === 'ended' || data.status === 'declined') {
+          cleanup()
+          onEnd()
+        }
+      })
+      unsubsRef.current.push(unsub1)
 
-        onSnapshot(collection(db, 'calls', callId, 'calleeCandidates'), (snap) => {
-          snap.docChanges().forEach(async change => {
-            if (change.type === 'added') {
+      // Listen for callee ICE candidates
+      const unsub2 = onSnapshot(collection(db, 'calls', callId, 'calleeCandidates'), (snap) => {
+        snap.docChanges().forEach(async change => {
+          if (change.type === 'added') {
+            try {
               await pc.addIceCandidate(new RTCIceCandidate(change.doc.data()))
-            }
-          })
+            } catch (err) { console.warn('Failed to add callee candidate:', err) }
+          }
         })
-      }
+      })
+      unsubsRef.current.push(unsub2)
+
     } catch (err) {
       console.error('Call error:', err)
       setStatus('failed')
     }
   }
 
+  // ═══ INCOMING CALL (Callee side) ═══
+  const answerIncomingCall = async () => {
+    try {
+      const stream = await getLocalStream()
+      localStreamRef.current = stream
+      const pc = createPeerConnection()
+      pcRef.current = pc
+
+      // Add local audio tracks
+      stream.getTracks().forEach(t => pc.addTrack(t, stream))
+
+      // When we receive remote audio, play it
+      pc.ontrack = (e) => {
+        if (remoteAudioRef.current && e.streams[0]) {
+          remoteAudioRef.current.srcObject = e.streams[0]
+        }
+      }
+
+      // Send ICE candidates to Firestore
+      pc.onicecandidate = async (e) => {
+        if (e.candidate) {
+          try {
+            await addDoc(collection(db, 'calls', callId, 'calleeCandidates'), e.candidate.toJSON())
+          } catch (err) { console.warn('Failed to send callee candidate:', err) }
+        }
+      }
+
+      // Get the call doc with the offer
+      const callSnap = await getDoc(doc(db, 'calls', callId))
+      if (!callSnap.exists()) { setStatus('failed'); return }
+
+      const callData = callSnap.data()
+      if (!callData.offer) { setStatus('failed'); return }
+
+      // Set the remote description (caller's offer)
+      await pc.setRemoteDescription(new RTCSessionDescription(callData.offer))
+
+      // Create and send answer
+      const answer = await pc.createAnswer()
+      await pc.setLocalDescription(answer)
+
+      await updateDoc(doc(db, 'calls', callId), {
+        answer: { type: answer.type, sdp: answer.sdp },
+        status: 'connected',
+      })
+
+      setStatus('connected')
+
+      // Listen for caller ICE candidates
+      const unsub1 = onSnapshot(collection(db, 'calls', callId, 'callerCandidates'), (snap) => {
+        snap.docChanges().forEach(async change => {
+          if (change.type === 'added') {
+            try {
+              await pc.addIceCandidate(new RTCIceCandidate(change.doc.data()))
+            } catch (err) { console.warn('Failed to add caller candidate:', err) }
+          }
+        })
+      })
+      unsubsRef.current.push(unsub1)
+
+      // Listen for call end
+      const unsub2 = onSnapshot(doc(db, 'calls', callId), (snap) => {
+        const data = snap.data()
+        if (data?.status === 'ended') {
+          cleanup()
+          onEnd()
+        }
+      })
+      unsubsRef.current.push(unsub2)
+
+    } catch (err) {
+      console.error('Answer error:', err)
+      setStatus('failed')
+    }
+  }
+
   const cleanup = () => {
     clearInterval(timerRef.current)
+    unsubsRef.current.forEach(unsub => unsub())
+    unsubsRef.current = []
     localStreamRef.current?.getTracks().forEach(t => t.stop())
-    pcRef.current?.close()
+    if (pcRef.current) {
+      pcRef.current.close()
+      pcRef.current = null
+    }
   }
 
   const endCall = async () => {
-    await updateDoc(doc(db, 'calls', callId), { status: 'ended' }).catch(() => {})
+    try {
+      await updateDoc(doc(db, 'calls', callId), { status: 'ended' })
+    } catch {}
     cleanup()
     onEnd()
   }
@@ -114,7 +215,7 @@ export default function CallScreen({ callId, otherUser, onEnd, isOutgoing }) {
 
   return (
     <div className="fixed inset-0 z-[100] bg-background flex flex-col items-center justify-between py-16 animate-fade-up">
-      <audio ref={remoteAudioRef} autoPlay />
+      <audio ref={remoteAudioRef} autoPlay playsInline />
 
       {/* Top — user info */}
       <div className="flex flex-col items-center gap-4">
@@ -130,6 +231,7 @@ export default function CallScreen({ callId, otherUser, onEnd, isOutgoing }) {
           <h2 className="text-on-surface text-2xl font-bold font-headline">{otherUser?.displayName}</h2>
           <p className="text-secondary text-sm mt-1">
             {status === 'calling' && <span className="animate-pulse">Calling...</span>}
+            {status === 'connecting' && <span className="animate-pulse">Connecting...</span>}
             {status === 'connected' && formatDuration(duration)}
             {status === 'failed' && 'Call failed'}
           </p>

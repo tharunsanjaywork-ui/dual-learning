@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { db } from '../lib/firebase'
-import { doc, updateDoc, getDoc } from 'firebase/firestore'
+import { doc, updateDoc, getDoc, onSnapshot } from 'firebase/firestore'
 
 export default function IncomingCall({ callId, callerId, onAccept, onReject }) {
   const [caller, setCaller] = useState(null)
@@ -9,15 +9,29 @@ export default function IncomingCall({ callId, callerId, onAccept, onReject }) {
     if (!callerId) return
     getDoc(doc(db, 'users', callerId)).then(snap => {
       if (snap.exists()) setCaller({ id: snap.id, ...snap.data() })
-    })
+    }).catch(() => {})
   }, [callerId])
+
+  // Auto-dismiss if caller hangs up before we answer
+  useEffect(() => {
+    if (!callId) return
+    const unsub = onSnapshot(doc(db, 'calls', callId), (snap) => {
+      const data = snap.data()
+      if (data?.status === 'ended' || data?.status === 'declined') {
+        onReject()
+      }
+    })
+    return unsub
+  }, [callId])
 
   const accept = async () => {
     onAccept(callId, caller)
   }
 
   const reject = async () => {
-    await updateDoc(doc(db, 'calls', callId), { status: 'ended' }).catch(() => {})
+    try {
+      await updateDoc(doc(db, 'calls', callId), { status: 'declined' })
+    } catch {}
     onReject()
   }
 
@@ -44,7 +58,7 @@ export default function IncomingCall({ callId, callerId, onAccept, onReject }) {
         </button>
 
         <button onClick={accept}
-          className="w-11 h-11 rounded-full bg-secondary/20 border border-secondary/40 flex items-center justify-center hover:bg-secondary/30 active:scale-90 transition-all">
+          className="w-11 h-11 rounded-full bg-secondary/20 border border-secondary/40 flex items-center justify-center hover:bg-secondary/30 active:scale-90 transition-all animate-pulse">
           <span className="material-symbols-outlined text-secondary text-xl">call</span>
         </button>
       </div>

@@ -1,6 +1,9 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
+import { requestNotificationPermission } from '../../lib/notifications'
+import { db } from '../../lib/firebase'
+import { doc, updateDoc } from 'firebase/firestore'
 
 const SECTIONS = [
   {
@@ -59,7 +62,7 @@ const SECTIONS = [
 
 export default function SettingsPage() {
   const navigate = useNavigate()
-  const { logout } = useAuth()
+  const { logout, userProfile } = useAuth()
   const [toggles, setToggles] = useState({
     darkMode: true,
     notifMessages: true,
@@ -74,8 +77,31 @@ export default function SettingsPage() {
     disappearing: 'Off',
   })
 
-  const handleToggle = (key) => {
-    setToggles(prev => ({ ...prev, [key]: !prev[key] }))
+  const handleToggle = async (key) => {
+    const newVal = !toggles[key]
+    setToggles(prev => ({ ...prev, [key]: newVal }))
+
+    // If enabling message notifications, request permission
+    if (key === 'notifMessages' && newVal) {
+      try {
+        const token = await requestNotificationPermission()
+        if (token && userProfile?.id) {
+          // Save FCM token to user profile in Firestore
+          await updateDoc(doc(db, 'users', userProfile.id), {
+            fcmToken: token,
+            notificationsEnabled: true,
+          })
+          console.log('[DualZone] FCM token saved:', token.substring(0, 20) + '...')
+        } else if (!token) {
+          // Permission denied — revert toggle
+          setToggles(prev => ({ ...prev, [key]: false }))
+          alert('Notification permission was denied. Please enable it in browser settings.')
+        }
+      } catch (err) {
+        console.error('Notification setup error:', err)
+        setToggles(prev => ({ ...prev, [key]: false }))
+      }
+    }
   }
 
   const handleLogout = async () => {

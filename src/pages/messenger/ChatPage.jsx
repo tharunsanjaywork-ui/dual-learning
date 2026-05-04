@@ -295,7 +295,7 @@ export default function ChatPage() {
     setRecordState('idle')
     try {
       const result = await uploadBlobToCloudinary(blob, 'audio', 'messages')
-      await sendMessage(chatId, { type: 'audio', content: '', fileURL: result.secure_url, fileName: 'Voice message', fileSize: blob.size })
+      await sendMessage(chatId, { type: 'audio', content: '', fileURL: result.secure_url, fileName: 'Voice message', fileSize: blob.size, audioDuration: recordTime })
     } catch (err) { alert('Audio upload failed: ' + err.message) }
     finally { setUploading(false); audioPreviewRef.current = null; setRecordTime(0) }
   }
@@ -441,7 +441,7 @@ export default function ChatPage() {
           </div>
         </button>
         <div className="flex items-center gap-1">
-          <button onClick={() => { const id = `${userProfile.id}_${otherUser.id}_${Date.now()}`; setActiveCall({ callId: id, isOutgoing: true }) }} className="p-2 rounded-xl text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-all">
+          <button onClick={() => { if (!otherUser?.id) return; const id = `${userProfile.id}_${otherUser.id}_${Date.now()}`; setActiveCall({ callId: id, isOutgoing: true }) }} className="p-2 rounded-xl text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-all">
             <span className="material-symbols-outlined text-xl">call</span>
           </button>
           <button className="p-2 rounded-xl text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-all hidden md:flex">
@@ -777,8 +777,9 @@ export default function ChatPage() {
       {activeCall && (
         <CallScreen
           callId={activeCall.callId}
-          otherUser={otherUser}
+          otherUser={activeCall.callerUser || otherUser}
           isOutgoing={activeCall.isOutgoing}
+          currentUserId={userProfile?.id}
           onEnd={() => setActiveCall(null)}
         />
       )}
@@ -788,7 +789,7 @@ export default function ChatPage() {
           callerId={incomingCall.callerId}
           onAccept={(callId, caller) => {
             setIncomingCall(null)
-            setActiveCall({ callId, isOutgoing: false })
+            setActiveCall({ callId, isOutgoing: false, callerUser: caller })
           }}
           onReject={() => setIncomingCall(null)}
         />
