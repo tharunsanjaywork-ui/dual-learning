@@ -9,6 +9,7 @@ import {
   doc, getDocs, serverTimestamp, limit, arrayUnion, arrayRemove, setDoc, getDoc,
 } from 'firebase/firestore'
 import { useAuth } from './AuthContext'
+import { listenForegroundNotifications, showInAppNotification } from '../lib/notifications'
 
 const ChatContext = createContext(null)
 
@@ -25,6 +26,23 @@ export function ChatProvider({ children }) {
   const [messages, setMessages] = useState([])
   const [typingUsers, setTypingUsers] = useState({})
   const [onlineUsers, setOnlineUsers] = useState({})
+
+  // Listen for foreground push notifications
+  useEffect(() => {
+    if (!userProfile?.id) return
+    const unsub = listenForegroundNotifications((payload) => {
+      const { title, body } = payload.notification || {}
+      showInAppNotification({
+        title: title || 'New message',
+        body: body || '',
+        onClick: () => {
+          const url = payload.data?.url
+          if (url) window.location.href = url
+        }
+      })
+    })
+    return unsub
+  }, [userProfile?.id])
 
   // Listen to user's chats — ALWAYS from primary
   useEffect(() => {

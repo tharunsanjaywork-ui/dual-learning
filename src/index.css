@@ -2,6 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Disable tap highlight on mobile */
+*, *::before, *::after { -webkit-tap-highlight-color: transparent; }
+button { -webkit-tap-highlight-color: transparent; }
 /* ===== FLUID TYPOGRAPHY (Task 7) ===== */
 :root {
   --background: #0d0e11;
@@ -542,15 +545,26 @@ button, a, [role="button"] {
 .stagger-children > *:nth-child(5) { animation-delay: 200ms; }
 .stagger-children > *:nth-child(n+6) { animation-delay: 250ms; }
 
-/* Wave bars for call screen */
+/* Wave bars for call screen — GPU accelerated */
 @keyframes wave-bar {
-  0%, 100% { height: var(--bar-h); }
-  50% { height: calc(var(--bar-h) * 2.5); }
+  0%, 100% { transform: scaleY(0.4); opacity: 0.7; }
+  50% { transform: scaleY(1); opacity: 1; }
 }
 .wave-bar {
-  animation: wave-bar 0.6s ease-in-out infinite;
-  animation-delay: calc(var(--i, 0) * 80ms);
+  transform-origin: bottom;
+  animation: wave-bar 1.2s ease-in-out infinite;
 }
+.wave-bar:nth-child(1) { animation-delay: 0ms; }
+.wave-bar:nth-child(2) { animation-delay: 100ms; }
+.wave-bar:nth-child(3) { animation-delay: 200ms; }
+.wave-bar:nth-child(4) { animation-delay: 80ms; }
+.wave-bar:nth-child(5) { animation-delay: 160ms; }
+.wave-bar:nth-child(6) { animation-delay: 240ms; }
+.wave-bar:nth-child(7) { animation-delay: 120ms; }
+.wave-bar:nth-child(8) { animation-delay: 40ms; }
+.wave-bar:nth-child(9) { animation-delay: 200ms; }
+.wave-bar:nth-child(10) { animation-delay: 300ms; }
+.wave-bar:nth-child(11) { animation-delay: 60ms; }
 
 /* ═══ ADDITIONAL ANIMATIONS ═══ */
 
@@ -701,3 +715,39 @@ button, a, [role="button"] {
   to { width: 100%; }
 }
 .animate-story-progress { animation: story-progress 5s linear forwards; }
+
+/* Audio bar dance — for voice message waveform */
+@keyframes audio-bar-dance {
+  0%, 100% { transform: scaleY(0.4); }
+  50% { transform: scaleY(1); }
+}
+
+/* Page enter animation */
+@keyframes page-enter {
+  from { opacity: 0; transform: translateY(8px) scale(0.99); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.animate-page-enter {
+  animation: page-enter 0.3s cubic-bezier(0.22,1,0.36,1);
+}
+
+/* Online dot pulse */
+@keyframes online-dot {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(0,228,117,0.5);
+  }
+  50% {
+    transform: scale(1.15);
+    box-shadow: 0 0 0 3px rgba(0,228,117,0);
+  }
+}
+.online-dot-animated {
+  animation: online-dot 2s ease-in-out infinite;
+  will-change: transform;
+}
+
+/* Story ring will-change for perf */
+.story-ring-animated {
+  will-change: transform;
+}

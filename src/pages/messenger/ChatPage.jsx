@@ -3,11 +3,9 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useChat } from '../../context/ChatContext'
 import { useAuth } from '../../context/AuthContext'
 import { db } from '../../lib/firebase'
-import { doc, getDoc, collection, query, where, onSnapshot } from 'firebase/firestore'
+import { doc, getDoc } from 'firebase/firestore'
 import { uploadToCloudinary, uploadBlobToCloudinary, getFileType } from '../../lib/cloudinary'
 import { searchGifs } from '../../lib/giphy'
-import CallScreen from '../../components/CallScreen'
-import IncomingCall from '../../components/IncomingCall'
 
 function AudioPlayer({ src }) {
   const audioRef = useRef(null)
@@ -62,8 +60,17 @@ function AudioPlayer({ src }) {
             {bars.map((h, i) => {
               const isPlayed = (i / bars.length)*100 <= progress
               return (
-                <div key={i} className="flex-1 rounded-full transition-all duration-150"
-                  style={{ height: `${h}px`, backgroundColor: isPlayed ? 'var(--secondary)' : 'rgba(170,171,178,0.25)' }} />
+                <div key={i} className="flex-1 rounded-full"
+                  style={{
+                    height: `${h}px`,
+                    backgroundColor: isPlayed ? '#00e475' : 'rgba(170,171,178,0.3)',
+                    animation: playing && isPlayed
+                      ? `audio-bar-dance ${0.4 + (i % 5) * 0.1}s ease-in-out infinite`
+                      : 'none',
+                    animationDelay: `${i * 30}ms`,
+                    transformOrigin: 'bottom',
+                    transition: 'background-color 0.2s ease',
+                  }} />
               )
             })}
           </div>
@@ -124,8 +131,7 @@ export default function ChatPage() {
   const [editText, setEditText] = useState('')
   const [showReactPicker, setShowReactPicker] = useState(null)
   const [forwardModal, setForwardModal] = useState(null)
-  const [activeCall, setActiveCall] = useState(null)
-  const [incomingCall, setIncomingCall] = useState(null)
+
 
   const scrollToMessage = (msgId) => {
     const el = messageRefs.current[msgId]
@@ -163,24 +169,7 @@ export default function ChatPage() {
     if (unseen.length) markAsSeen(chatId, unseen)
   }, [messages, userProfile?.id, chatId])
 
-  // Listen for incoming calls
-  useEffect(() => {
-    if (!userProfile?.id) return
-    const q = query(
-      collection(db, 'calls'),
-      where('calleeId', '==', userProfile.id),
-      where('status', '==', 'ringing')
-    )
-    const unsub = onSnapshot(q, (snap) => {
-      if (!snap.empty) {
-        const callDoc = snap.docs[0]
-        setIncomingCall({ callId: callDoc.id, callerId: callDoc.data().callerId })
-      } else {
-        setIncomingCall(null)
-      }
-    })
-    return unsub
-  }, [userProfile?.id])
+
 
   const handleSend = async () => {
     const trimmed = text.trim()
@@ -441,7 +430,7 @@ export default function ChatPage() {
           </div>
         </button>
         <div className="flex items-center gap-1">
-          <button onClick={() => { if (!otherUser?.id) return; const id = `${userProfile.id}_${otherUser.id}_${Date.now()}`; setActiveCall({ callId: id, isOutgoing: true }) }} className="p-2 rounded-xl text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-all">
+          <button onClick={() => { if (!otherUser?.id || !userProfile?.id) return; const id = `${userProfile.id}_${otherUser.id}_${Date.now()}`; window.dispatchEvent(new CustomEvent('dz_start_call', { detail: { callId: id, otherUser, isOutgoing: true } })) }} className="p-2 rounded-xl text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-all">
             <span className="material-symbols-outlined text-xl">call</span>
           </button>
           <button className="p-2 rounded-xl text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-all hidden md:flex">
@@ -773,27 +762,6 @@ export default function ChatPage() {
         </div>
       )}
 
-      {/* Call Overlays */}
-      {activeCall && (
-        <CallScreen
-          callId={activeCall.callId}
-          otherUser={activeCall.callerUser || otherUser}
-          isOutgoing={activeCall.isOutgoing}
-          currentUserId={userProfile?.id}
-          onEnd={() => setActiveCall(null)}
-        />
-      )}
-      {incomingCall && !activeCall && (
-        <IncomingCall
-          callId={incomingCall.callId}
-          callerId={incomingCall.callerId}
-          onAccept={(callId, caller) => {
-            setIncomingCall(null)
-            setActiveCall({ callId, isOutgoing: false, callerUser: caller })
-          }}
-          onReject={() => setIncomingCall(null)}
-        />
-      )}
     </div>
   )
 }

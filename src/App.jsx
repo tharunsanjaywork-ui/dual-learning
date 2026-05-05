@@ -23,6 +23,7 @@ import SettingsPage from './pages/messenger/SettingsPage'
 import StoriesPage from './pages/messenger/StoriesPage'
 import SwitchTransition from './components/shared/SwitchTransition'
 import StorageMonitor from './components/StorageMonitor'
+import NotificationBanner from './components/NotificationBanner'
 
 function ProtectedRoute({ children, requiredMode }) {
   const { user, mode, loading } = useAuth()
@@ -62,6 +63,7 @@ export default function App() {
   return (
     <>
     <StorageMonitor />
+    <NotificationBanner />
     <Routes>
       {/* Auth Routes */}
       <Route path="/register" element={<RegisterPage />} />

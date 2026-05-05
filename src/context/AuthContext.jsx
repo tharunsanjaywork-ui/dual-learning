@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useRef } from 'react'
 import { auth, db } from '../lib/firebase'
+import { requestNotificationPermission } from '../lib/notifications'
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -206,6 +207,9 @@ export function AuthProvider({ children }) {
 
       setMode('study')
 
+      // Request notification permission and save FCM token
+      requestNotificationPermission(firestoreId).catch(() => {})
+
       // Allow onAuthStateChanged to work again after a delay
       setTimeout(() => { isLoggingIn.current = false }, 2000)
 
@@ -232,6 +236,9 @@ export function AuthProvider({ children }) {
         localStorage.setItem('dz_mode', 'messenger')
 
         setMode('messenger')
+
+        // Request notification permission and save FCM token
+        requestNotificationPermission(firestoreId).catch(() => {})
 
         // Allow onAuthStateChanged to work again after a delay
         setTimeout(() => { isLoggingIn.current = false }, 2000)

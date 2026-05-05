@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { db } from '../lib/firebase'
-import { doc, setDoc, onSnapshot, updateDoc, collection, addDoc, getDoc, serverTimestamp } from 'firebase/firestore'
+import { doc, setDoc, onSnapshot, updateDoc, collection, addDoc, getDoc, getDocs, serverTimestamp } from 'firebase/firestore'
 import { createPeerConnection, getLocalStream } from '../lib/webrtc'
 
 export default function CallScreen({ callId, otherUser, onEnd, isOutgoing, currentUserId }) {
@@ -36,6 +36,16 @@ export default function CallScreen({ callId, otherUser, onEnd, isOutgoing, curre
     return `${m}:${sec.toString().padStart(2, '0')}`
   }
 
+  const setupOnTrack = (pc) => {
+    pc.ontrack = (e) => {
+      if (remoteAudioRef.current && e.streams[0]) {
+        remoteAudioRef.current.srcObject = e.streams[0]
+        remoteAudioRef.current.play()
+          .catch(err => console.warn('Audio play blocked:', err))
+      }
+    }
+  }
+
   // ═══ OUTGOING CALL (Caller side) ═══
   const startOutgoingCall = async () => {
     try {
@@ -44,17 +54,17 @@ export default function CallScreen({ callId, otherUser, onEnd, isOutgoing, curre
       const pc = createPeerConnection()
       pcRef.current = pc
 
-      // Add local audio tracks to peer connection
+      // 1. Add local audio tracks
       stream.getTracks().forEach(t => pc.addTrack(t, stream))
 
-      // When we receive remote audio, play it
-      pc.ontrack = (e) => {
-        if (remoteAudioRef.current && e.streams[0]) {
-          remoteAudioRef.current.srcObject = e.streams[0]
-        }
-      }
+      // 2. Set up ontrack for remote audio
+      setupOnTrack(pc)
 
-      // Send ICE candidates to Firestore
+      // 3. Create offer and set local description
+      const offer = await pc.createOffer()
+      await pc.setLocalDescription(offer)
+
+      // 4. Send ICE candidates to Firestore (AFTER setLocalDescription)
       pc.onicecandidate = async (e) => {
         if (e.candidate) {
           try {
@@ -63,10 +73,7 @@ export default function CallScreen({ callId, otherUser, onEnd, isOutgoing, curre
         }
       }
 
-      // Create and send offer
-      const offer = await pc.createOffer()
-      await pc.setLocalDescription(offer)
-
+      // 5. Write offer to Firestore
       await setDoc(doc(db, 'calls', callId), {
         offer: { type: offer.type, sdp: offer.sdp },
         callerId: currentUserId,
@@ -75,34 +82,52 @@ export default function CallScreen({ callId, otherUser, onEnd, isOutgoing, curre
         createdAt: serverTimestamp(),
       })
 
-      // Listen for answer from callee
+      // 6. Function to add callee ICE candidates — ONLY called after setRemoteDescription
+      const addCalleeCandidates = () => {
+        // First get any existing candidates
+        getDocs(collection(db, 'calls', callId, 'calleeCandidates'))
+          .then(snap => {
+            snap.docs.forEach(d => {
+              pc.addIceCandidate(new RTCIceCandidate(d.data()))
+                .catch(e => console.warn('ICE add error:', e))
+            })
+          })
+        // Then listen for new ones
+        const unsub = onSnapshot(
+          collection(db, 'calls', callId, 'calleeCandidates'),
+          snap => {
+            snap.docChanges().forEach(change => {
+              if (change.type === 'added') {
+                pc.addIceCandidate(new RTCIceCandidate(change.doc.data()))
+                  .catch(e => console.warn('ICE add error:', e))
+              }
+            })
+          }
+        )
+        unsubsRef.current.push(unsub)
+      }
+
+      // 7. Listen for answer from callee
       const unsub1 = onSnapshot(doc(db, 'calls', callId), async (snap) => {
         const data = snap.data()
         if (!data) return
+
+        // When answer arrives, set remote description THEN add ICE candidates
         if (data.answer && !pc.currentRemoteDescription) {
           try {
             await pc.setRemoteDescription(new RTCSessionDescription(data.answer))
             setStatus('connected')
+            // NOW it's safe to add callee ICE candidates
+            addCalleeCandidates()
           } catch (err) { console.error('Failed to set remote description:', err) }
         }
+
         if (data.status === 'ended' || data.status === 'declined') {
           cleanup()
           onEnd()
         }
       })
       unsubsRef.current.push(unsub1)
-
-      // Listen for callee ICE candidates
-      const unsub2 = onSnapshot(collection(db, 'calls', callId, 'calleeCandidates'), (snap) => {
-        snap.docChanges().forEach(async change => {
-          if (change.type === 'added') {
-            try {
-              await pc.addIceCandidate(new RTCIceCandidate(change.doc.data()))
-            } catch (err) { console.warn('Failed to add callee candidate:', err) }
-          }
-        })
-      })
-      unsubsRef.current.push(unsub2)
 
     } catch (err) {
       console.error('Call error:', err)
@@ -118,17 +143,45 @@ export default function CallScreen({ callId, otherUser, onEnd, isOutgoing, curre
       const pc = createPeerConnection()
       pcRef.current = pc
 
-      // Add local audio tracks
+      // 1. Add local audio tracks
       stream.getTracks().forEach(t => pc.addTrack(t, stream))
 
-      // When we receive remote audio, play it
-      pc.ontrack = (e) => {
-        if (remoteAudioRef.current && e.streams[0]) {
-          remoteAudioRef.current.srcObject = e.streams[0]
-        }
-      }
+      // 2. Set up ontrack for remote audio
+      setupOnTrack(pc)
 
-      // Send ICE candidates to Firestore
+      // 3. Get call doc with the offer
+      const callSnap = await getDoc(doc(db, 'calls', callId))
+      if (!callSnap.exists()) { setStatus('failed'); return }
+      const callData = callSnap.data()
+      if (!callData.offer) { setStatus('failed'); return }
+
+      // 4. Set remote description (caller's offer)
+      await pc.setRemoteDescription(new RTCSessionDescription(callData.offer))
+
+      // 5. IMMEDIATELY after setRemoteDescription, add existing caller ICE candidates
+      getDocs(collection(db, 'calls', callId, 'callerCandidates'))
+        .then(snap => {
+          snap.docs.forEach(d => {
+            pc.addIceCandidate(new RTCIceCandidate(d.data()))
+              .catch(e => console.warn('Caller ICE error:', e))
+          })
+        })
+
+      // 6. Listen for new caller candidates
+      const unsubCaller = onSnapshot(
+        collection(db, 'calls', callId, 'callerCandidates'),
+        snap => {
+          snap.docChanges().forEach(change => {
+            if (change.type === 'added') {
+              pc.addIceCandidate(new RTCIceCandidate(change.doc.data()))
+                .catch(() => {})
+            }
+          })
+        }
+      )
+      unsubsRef.current.push(unsubCaller)
+
+      // 7. Set up callee ICE candidate sending
       pc.onicecandidate = async (e) => {
         if (e.candidate) {
           try {
@@ -137,20 +190,11 @@ export default function CallScreen({ callId, otherUser, onEnd, isOutgoing, curre
         }
       }
 
-      // Get the call doc with the offer
-      const callSnap = await getDoc(doc(db, 'calls', callId))
-      if (!callSnap.exists()) { setStatus('failed'); return }
-
-      const callData = callSnap.data()
-      if (!callData.offer) { setStatus('failed'); return }
-
-      // Set the remote description (caller's offer)
-      await pc.setRemoteDescription(new RTCSessionDescription(callData.offer))
-
-      // Create and send answer
+      // 8. Create answer and set local description
       const answer = await pc.createAnswer()
       await pc.setLocalDescription(answer)
 
+      // 9. Write answer to Firestore
       await updateDoc(doc(db, 'calls', callId), {
         answer: { type: answer.type, sdp: answer.sdp },
         status: 'connected',
@@ -158,19 +202,7 @@ export default function CallScreen({ callId, otherUser, onEnd, isOutgoing, curre
 
       setStatus('connected')
 
-      // Listen for caller ICE candidates
-      const unsub1 = onSnapshot(collection(db, 'calls', callId, 'callerCandidates'), (snap) => {
-        snap.docChanges().forEach(async change => {
-          if (change.type === 'added') {
-            try {
-              await pc.addIceCandidate(new RTCIceCandidate(change.doc.data()))
-            } catch (err) { console.warn('Failed to add caller candidate:', err) }
-          }
-        })
-      })
-      unsubsRef.current.push(unsub1)
-
-      // Listen for call end
+      // 10. Listen for call end
       const unsub2 = onSnapshot(doc(db, 'calls', callId), (snap) => {
         const data = snap.data()
         if (data?.status === 'ended') {
@@ -188,7 +220,7 @@ export default function CallScreen({ callId, otherUser, onEnd, isOutgoing, curre
 
   const cleanup = () => {
     clearInterval(timerRef.current)
-    unsubsRef.current.forEach(unsub => unsub())
+    unsubsRef.current.forEach(unsub => { try { unsub() } catch {} })
     unsubsRef.current = []
     localStreamRef.current?.getTracks().forEach(t => t.stop())
     if (pcRef.current) {
@@ -215,7 +247,12 @@ export default function CallScreen({ callId, otherUser, onEnd, isOutgoing, curre
 
   return (
     <div className="fixed inset-0 z-[100] bg-background flex flex-col items-center justify-between py-16 animate-fade-up">
-      <audio ref={remoteAudioRef} autoPlay playsInline />
+      <audio
+        ref={remoteAudioRef}
+        autoPlay
+        playsInline
+        onLoadedMetadata={() => remoteAudioRef.current?.play().catch(() => {})}
+      />
 
       {/* Top — user info */}
       <div className="flex flex-col items-center gap-4">
@@ -240,10 +277,12 @@ export default function CallScreen({ callId, otherUser, onEnd, isOutgoing, curre
 
       {/* Wave animation when connected */}
       {status === 'connected' && (
-        <div className="flex items-end gap-1 h-12">
-          {[4,7,10,6,12,8,5,9,11,6,8].map((h, i) => (
-            <div key={i} className="w-1.5 rounded-full bg-secondary wave-bar"
-              style={{ '--bar-h': `${h}px`, '--i': i }} />
+        <div className="flex items-end gap-1 h-16">
+          {[32,48,64,40,72,56,36,60,68,44,52].map((h, i) => (
+            <div key={i}
+              className="w-1.5 rounded-full bg-secondary wave-bar"
+              style={{ height: `${h}px` }}
+            />
           ))}
         </div>
       )}
