@@ -122,7 +122,7 @@ export default function ProgressPage() {
   }
 
   return (
-    <div className="px-4 md:px-8 lg:px-16 py-8">
+    <div className="px-4 md:px-8 lg:px-16 py-8 animate-page-enter">
       <h1 className="font-headline text-3xl md:text-5xl font-bold text-on-surface mb-8">Your Progress</h1>
 
       {/* Bento Grid */}

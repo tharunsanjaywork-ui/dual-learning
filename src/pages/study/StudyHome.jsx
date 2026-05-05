@@ -57,7 +57,7 @@ export default function StudyHome() {
   }
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen animate-page-enter">
       {/* Hero Banner */}
       <section className="relative overflow-hidden">
         <div className="absolute inset-0 gradient-hero opacity-90" />

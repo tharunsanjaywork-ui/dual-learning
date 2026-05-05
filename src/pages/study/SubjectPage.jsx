@@ -23,7 +23,7 @@ export default function SubjectPage({ subject }) {
   }
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen animate-page-enter">
       {/* Subject Header Banner */}
       <section className="relative overflow-hidden bg-surface-container-low border-b border-outline-variant/20">
         <div className="absolute top-0 right-0 w-64 h-64 ambient-blob bg-primary-container" />

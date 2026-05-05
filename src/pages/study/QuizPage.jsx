@@ -104,7 +104,7 @@ export default function QuizPage() {
 
   if (screen === 'select') {
     return (
-      <div className="px-4 md:px-8 lg:px-16 py-8">
+      <div className="px-4 md:px-8 lg:px-16 py-8 animate-page-enter">
         <h1 className="font-headline text-3xl md:text-5xl font-bold text-on-surface mb-2">Quiz Challenge</h1>
         <p className="text-on-surface-variant mb-8">Select an exam to begin your assessment</p>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5 stagger-children">
