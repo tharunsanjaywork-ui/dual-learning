@@ -94,6 +94,39 @@ export function AuthProvider({ children }) {
     return unsub
   }, [])
 
+  // Handle online status on tab close/switch
+  useEffect(() => {
+    if (!userProfile?.id) return
+
+    const setOnlineStatus = (isOnline) => {
+      try {
+        updateDoc(doc(db, 'users', userProfile.id), {
+          isOnline,
+          lastSeen: serverTimestamp()
+        }).catch(() => {})
+      } catch (e) {}
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        setOnlineStatus(false)
+      } else {
+        setOnlineStatus(true)
+      }
+    }
+
+    // Initialize as true when mounted
+    setOnlineStatus(true)
+
+    window.addEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener('beforeunload', () => setOnlineStatus(false))
+
+    return () => {
+      window.removeEventListener('visibilitychange', handleVisibilityChange)
+      setOnlineStatus(false)
+    }
+  }, [userProfile?.id])
+
   // Register new user
   const register = async ({ username, studyPassword, messengerPassword, displayName, profilePic, bio, interests }) => {
     // Check if username is taken
