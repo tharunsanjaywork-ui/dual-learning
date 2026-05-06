@@ -2,15 +2,22 @@ const CACHE_NAME = 'dualzone-v1'
 const OFFLINE_URLS = [
   '/',
   '/index.html',
-  '/icon-192.png',
-  '/icon-512.png',
 ]
 
+// Try to cache icons separately without failing
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => {
-      return cache.addAll(OFFLINE_URLS)
-    })
+    caches.open(CACHE_NAME)
+      .then(cache => cache.addAll(OFFLINE_URLS))
+      .then(() => {
+        // Try to cache icons but don't fail if missing
+        return caches.open(CACHE_NAME).then(cache => {
+          return Promise.allSettled([
+            cache.add('/icon-192.png'),
+            cache.add('/icon-512.png'),
+          ])
+        })
+      })
   )
   self.skipWaiting()
 })

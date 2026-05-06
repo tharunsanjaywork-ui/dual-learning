@@ -2,7 +2,7 @@
   "name": "Focus Sanctuary",
   "short_name": "DualZone",
   "description": "Your personal learning and messaging sanctuary",
-  "start_url": "/study/home",
+  "start_url": "/",
   "display": "standalone",
   "background_color": "#0d0e11",
   "theme_color": "#0d0e11",

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { isUserOnline } from '../../utils/storage'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useChat } from '../../context/ChatContext'
 import { useAuth } from '../../context/AuthContext'
@@ -412,7 +413,7 @@ export default function ChatPage() {
                 </div>
               )}
             </div>
-            {otherUser?.isOnline && <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-secondary rounded-full border-2 border-surface-container-low online-dot-animated" />}
+            {isUserOnline(otherUser) && <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-secondary rounded-full border-2 border-surface-container-low online-dot-animated" />}
           </div>
           <div className="flex-1 min-w-0 text-left">
             <h3 className="text-on-surface font-medium text-sm truncate">{otherUser?.displayName || 'Loading...'}</h3>
@@ -424,7 +425,7 @@ export default function ChatPage() {
                     <span className="typing-dot w-1 h-1 rounded-full bg-secondary inline-block" />
                     typing
                   </span>
-                : otherUser?.isOnline ? 'Online' : 'Offline'
+                : isUserOnline(otherUser) ? 'Online' : 'Offline'
               }
             </p>
           </div>

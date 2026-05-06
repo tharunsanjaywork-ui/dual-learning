@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { isUserOnline } from '../../utils/storage'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useChat } from '../../context/ChatContext'
 import { useAuth } from '../../context/AuthContext'
@@ -200,7 +201,7 @@ export default function GroupChatPage() {
                     <div className="w-9 h-9 rounded-full overflow-hidden bg-surface-container-highest flex items-center justify-center">
                       {member.profilePic ? <img src={member.profilePic} className="w-full h-full object-cover" /> : <span className="material-symbols-outlined text-outline text-base">person</span>}
                     </div>
-                    {member.isOnline && <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-secondary rounded-full border-2 border-surface-container-low" />}
+                    {isUserOnline(member) && <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-secondary rounded-full border-2 border-surface-container-low" />}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-on-surface text-sm font-medium truncate">{member.displayName}</p>

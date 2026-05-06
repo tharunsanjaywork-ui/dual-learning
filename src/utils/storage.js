@@ -82,3 +82,16 @@ export const storage = {
   getTheme: () => localStorage.getItem('dz_theme') || 'dark',
   setTheme: (t) => localStorage.setItem('dz_theme', t),
 }
+
+export function isUserOnline(userData) {
+  if (!userData) return false
+  if (!userData.isOnline) return false
+  // Check if heartbeat is recent (within 2 minutes)
+  const heartbeat = userData.lastHeartbeat
+  if (!heartbeat) return userData.isOnline
+  const heartbeatMs = heartbeat.toMillis 
+    ? heartbeat.toMillis() 
+    : new Date(heartbeat).getTime()
+  const twoMinutesAgo = Date.now() - 2 * 60 * 1000
+  return heartbeatMs > twoMinutesAgo
+}

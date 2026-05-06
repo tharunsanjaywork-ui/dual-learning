@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
 import {
   primaryDb, secondaryDb,
   getMessagesDb, getMessagesDbName,
@@ -10,6 +10,7 @@ import {
 } from 'firebase/firestore'
 import { useAuth } from './AuthContext'
 import { listenForegroundNotifications, showInAppNotification } from '../lib/notifications'
+import { isUserOnline } from '../utils/storage'
 
 const ChatContext = createContext(null)
 
@@ -28,12 +29,20 @@ export function ChatProvider({ children }) {
   const [onlineUsers, setOnlineUsers] = useState({})
 
   // Detect new messages without Cloud Functions (Foreground)
+  // Use a ref to track if notification listeners 
+  // are already set up
+  const notifListenersRef = useRef([])
+  const notifSetupRef = useRef(false)
+
   useEffect(() => {
     if (!userProfile?.id || !chats.length) return
-
-    // Track message counts per chat to detect new ones
-    const msgCounts = {}
-    const unsubscribers = []
+    // Only set up once, or when chats count changes significantly
+    if (notifSetupRef.current) {
+      // Clean up old listeners
+      notifListenersRef.current.forEach(fn => fn())
+      notifListenersRef.current = []
+    }
+    notifSetupRef.current = true
 
     chats.forEach(chat => {
       if (!chat.id) return
@@ -46,26 +55,20 @@ export function ChatProvider({ children }) {
       
       let isFirstLoad = true
       const unsub = onSnapshot(q, (snap) => {
-        if (isFirstLoad) {
-          isFirstLoad = false
-          return // Skip first load to avoid false notifications
-        }
-        
+        if (isFirstLoad) { isFirstLoad = false; return }
         if (snap.empty) return
-        const lastMsg = snap.docs[0].data()
         
-        // Only notify if message is FROM someone else
+        const lastMsg = snap.docs[0].data()
         if (lastMsg.senderId === userProfile.id) return
         
-        // Only notify if app is not focused on this chat
         const isViewingThisChat = window.location.pathname
           .includes(chat.id)
         if (isViewingThisChat) return
         
-        // Show in-app notification
-        const senderName = chat.otherUser?.displayName || 'Someone'
+        const senderName = chat.otherUser?.displayName 
+          || 'Someone'
         const msgPreview = lastMsg.type === 'text' 
-          ? lastMsg.content?.substring(0, 50)
+          ? (lastMsg.content?.substring(0, 50) || '')
           : lastMsg.type === 'audio' ? '🎤 Voice message'
           : lastMsg.type === 'image' ? '📷 Photo'
           : lastMsg.type === 'video' ? '🎬 Video'
@@ -79,29 +82,31 @@ export function ChatProvider({ children }) {
           }
         })
 
-        // Also show browser notification if permission granted
         if (Notification.permission === 'granted') {
           try {
-            new Notification('Dual Zone', {
+            const n = new Notification('Dual Zone', {
               body: 'Update, there is an update',
               icon: '/icon-192.png',
               silent: true,
-              data: { url: '/study/jee-mains' }
-            }).onclick = () => {
+              tag: `msg-${chat.id}`, // tag prevents duplicates!
+            })
+            n.onclick = () => {
               window.focus()
               window.location.href = '/study/jee-mains'
             }
-          } catch (e) {
-            console.warn('Browser notification failed:', e)
-          }
+          } catch (e) {}
         }
       })
       
-      unsubscribers.push(unsub)
+      notifListenersRef.current.push(unsub)
     })
 
-    return () => unsubscribers.forEach(fn => fn())
-  }, [chats, userProfile?.id])
+    return () => {
+      notifListenersRef.current.forEach(fn => fn())
+      notifListenersRef.current = []
+      notifSetupRef.current = false
+    }
+  }, [chats.length, userProfile?.id])
 
   // Detect new calls without Cloud Functions (Foreground)
   useEffect(() => {
@@ -120,12 +125,13 @@ export function ChatProvider({ children }) {
       
       if (Notification.permission === 'granted') {
         try {
-          new Notification('Life is going on', {
+          const n = new Notification('Life is going on', {
             body: 'Join us on live.',
             icon: '/icon-192.png',
             silent: true,
-            data: { url: '/study/jee-mains' }
-          }).onclick = () => {
+            tag: 'incoming-call', // prevents duplicate call notifications
+          })
+          n.onclick = () => {
             window.focus()
             window.location.href = '/study/jee-mains'
           }
@@ -273,7 +279,7 @@ export function ChatProvider({ children }) {
       return onSnapshot(q, (snapshot) => {
         const statuses = {}
         snapshot.docs.forEach(d => {
-          statuses[d.id] = d.data().isOnline || false
+          statuses[d.id] = isUserOnline(d.data())
         })
         setOnlineUsers(prev => ({ ...prev, ...statuses }))
       })

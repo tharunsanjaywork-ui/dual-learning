@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { db } from '../../lib/firebase'
 import { collection, getDocs, addDoc, serverTimestamp } from 'firebase/firestore'
 import { useAuth } from '../../context/AuthContext'
 import { useChat } from '../../context/ChatContext'
 import { doc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore'
+import { isUserOnline } from '../../utils/storage'
 
 const FILTERS = ['All Residents', 'Deep Thinkers', 'Designers', 'Night Owls', 'Early Birds']
 
@@ -137,7 +138,7 @@ export default function SearchPage() {
                         </div>
                       )}
                     </div>
-                    {user.isOnline && <div className="absolute bottom-1 right-1 w-4 h-4 bg-secondary rounded-full border-2 border-surface-container" />}
+                    {isUserOnline(user) && <div className="absolute bottom-1 right-1 w-4 h-4 bg-secondary rounded-full border-2 border-surface-container" />}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-0.5">

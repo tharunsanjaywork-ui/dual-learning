@@ -94,60 +94,54 @@ export function AuthProvider({ children }) {
     return unsub
   }, [])
 
-  // Handle online status on tab close/switch
+  // Handle online status on tab close/switch (Heartbeat logic)
   useEffect(() => {
     if (!userProfile?.id) return
-
     const userId = userProfile.id
 
-    const setOnlineInDb = (isOnline) => {
-      updateDoc(doc(db, 'users', userId), {
-        isOnline,
-        lastSeen: serverTimestamp()
-      }).catch(() => {})
-    }
+    // Set online immediately
+    updateDoc(doc(db, 'users', userId), {
+      isOnline: true,
+      lastSeen: serverTimestamp(),
+      lastHeartbeat: serverTimestamp(),
+    }).catch(() => {})
 
-    // Set online when component mounts
-    setOnlineInDb(true)
+    // Send heartbeat every 30 seconds
+    // If heartbeat stops, user is considered offline
+    const heartbeatInterval = setInterval(() => {
+      if (document.visibilityState !== 'hidden') {
+        updateDoc(doc(db, 'users', userId), {
+          isOnline: true,
+          lastHeartbeat: serverTimestamp(),
+        }).catch(() => {})
+      }
+    }, 30000)
 
-    // Handle tab visibility change
+    // Handle visibility change
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
-        setOnlineInDb(false)
+        updateDoc(doc(db, 'users', userId), {
+          isOnline: false,
+          lastSeen: serverTimestamp(),
+        }).catch(() => {})
       } else {
-        setOnlineInDb(true)
+        updateDoc(doc(db, 'users', userId), {
+          isOnline: true,
+          lastHeartbeat: serverTimestamp(),
+        }).catch(() => {})
       }
     }
 
-    // Handle window close/refresh using sendBeacon
-    // sendBeacon works even when tab is closing
-    const handleBeforeUnload = () => {
-      // Use sendBeacon for reliable delivery on close
-      // Write directly to Firestore REST API
-      const url = `https://firestore.googleapis.com/v1/projects/${import.meta.env.VITE_FIREBASE_PROJECT_ID}/databases/(default)/documents/users/${userId}`
-      const data = JSON.stringify({
-        fields: {
-          isOnline: { booleanValue: false },
-          lastSeen: { timestampValue: new Date().toISOString() }
-        }
-      })
-      // sendBeacon is fire-and-forget, works on tab close
-      navigator.sendBeacon(
-        `${url}?updateMask.fieldPaths=isOnline&updateMask.fieldPaths=lastSeen`,
-        new Blob([data], { type: 'application/json' })
-      )
-    }
-
     window.addEventListener('visibilitychange', handleVisibilityChange)
-    window.addEventListener('beforeunload', handleBeforeUnload)
-    window.addEventListener('pagehide', handleBeforeUnload)
 
     return () => {
+      clearInterval(heartbeatInterval)
       window.removeEventListener('visibilitychange', handleVisibilityChange)
-      window.removeEventListener('beforeunload', handleBeforeUnload)
-      window.removeEventListener('pagehide', handleBeforeUnload)
-      // Set offline when component unmounts (logout, switch)
-      setOnlineInDb(false)
+      // Set offline on unmount
+      updateDoc(doc(db, 'users', userId), {
+        isOnline: false,
+        lastSeen: serverTimestamp(),
+      }).catch(() => {})
     }
   }, [userProfile?.id])
 
