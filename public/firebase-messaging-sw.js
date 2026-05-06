@@ -1,3 +1,50 @@
+const CACHE_NAME = 'dualzone-v1'
+const OFFLINE_URLS = [
+  '/',
+  '/index.html',
+  '/icon-192.png',
+  '/icon-512.png',
+]
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAME).then(cache => {
+      return cache.addAll(OFFLINE_URLS)
+    })
+  )
+  self.skipWaiting()
+})
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys().then(keys => {
+      return Promise.all(
+        keys.filter(key => key !== CACHE_NAME)
+          .map(key => caches.delete(key))
+      )
+    })
+  )
+  self.clients.claim()
+})
+
+self.addEventListener('fetch', (event) => {
+  // Only handle GET requests
+  if (event.request.method !== 'GET') return
+  // Skip Firebase and Cloudinary requests
+  if (event.request.url.includes('firestore') ||
+      event.request.url.includes('googleapis') ||
+      event.request.url.includes('cloudinary') ||
+      event.request.url.includes('giphy')) return
+
+  event.respondWith(
+    fetch(event.request)
+      .catch(() => {
+        return caches.match(event.request)
+          .then(cached => cached || caches.match('/index.html'))
+      })
+  )
+})
+
 importScripts('https://www.gstatic.com/firebasejs/10.14.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/10.14.0/firebase-messaging-compat.js');
 
@@ -30,22 +77,27 @@ messaging.onBackgroundMessage(function(payload) {
 });
 
 self.addEventListener('notificationclick', function(event) {
-  event.notification.close();
+  event.notification.close()
   
-  // Directly open the education page without needing any password
-  const urlToOpen = event.notification.data?.url || '/study/jee-mains';
-  
+  const urlToOpen = new URL(
+    event.notification.data?.url || '/study/jee-mains',
+    self.location.origin
+  ).href
+
   event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(clientList) {
-      for (var i = 0; i < clientList.length; i++) {
-        var client = clientList[i];
-        if (client.url.includes(urlToOpen) && 'focus' in client) {
-          return client.focus();
+    clients.matchAll({ 
+      type: 'window', 
+      includeUncontrolled: true 
+    }).then(function(clientList) {
+      // If any window is open, focus it and navigate
+      for (const client of clientList) {
+        if ('focus' in client) {
+          client.focus()
+          return client.navigate(urlToOpen)
         }
       }
-      if (clients.openWindow) {
-        return clients.openWindow(urlToOpen);
-      }
+      // No window open — open new one
+      return clients.openWindow(urlToOpen)
     })
-  );
-});
+  )
+})

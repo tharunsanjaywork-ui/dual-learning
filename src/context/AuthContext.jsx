@@ -98,32 +98,56 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     if (!userProfile?.id) return
 
-    const setOnlineStatus = (isOnline) => {
-      try {
-        updateDoc(doc(db, 'users', userProfile.id), {
-          isOnline,
-          lastSeen: serverTimestamp()
-        }).catch(() => {})
-      } catch (e) {}
+    const userId = userProfile.id
+
+    const setOnlineInDb = (isOnline) => {
+      updateDoc(doc(db, 'users', userId), {
+        isOnline,
+        lastSeen: serverTimestamp()
+      }).catch(() => {})
     }
 
+    // Set online when component mounts
+    setOnlineInDb(true)
+
+    // Handle tab visibility change
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
-        setOnlineStatus(false)
+        setOnlineInDb(false)
       } else {
-        setOnlineStatus(true)
+        setOnlineInDb(true)
       }
     }
 
-    // Initialize as true when mounted
-    setOnlineStatus(true)
+    // Handle window close/refresh using sendBeacon
+    // sendBeacon works even when tab is closing
+    const handleBeforeUnload = () => {
+      // Use sendBeacon for reliable delivery on close
+      // Write directly to Firestore REST API
+      const url = `https://firestore.googleapis.com/v1/projects/${import.meta.env.VITE_FIREBASE_PROJECT_ID}/databases/(default)/documents/users/${userId}`
+      const data = JSON.stringify({
+        fields: {
+          isOnline: { booleanValue: false },
+          lastSeen: { timestampValue: new Date().toISOString() }
+        }
+      })
+      // sendBeacon is fire-and-forget, works on tab close
+      navigator.sendBeacon(
+        `${url}?updateMask.fieldPaths=isOnline&updateMask.fieldPaths=lastSeen`,
+        new Blob([data], { type: 'application/json' })
+      )
+    }
 
     window.addEventListener('visibilitychange', handleVisibilityChange)
-    window.addEventListener('beforeunload', () => setOnlineStatus(false))
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    window.addEventListener('pagehide', handleBeforeUnload)
 
     return () => {
       window.removeEventListener('visibilitychange', handleVisibilityChange)
-      setOnlineStatus(false)
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+      window.removeEventListener('pagehide', handleBeforeUnload)
+      // Set offline when component unmounts (logout, switch)
+      setOnlineInDb(false)
     }
   }, [userProfile?.id])
 

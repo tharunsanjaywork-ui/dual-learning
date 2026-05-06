@@ -1,4 +1,5 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
+import { useEffect } from 'react'
 import { useAuth } from './context/AuthContext'
 import { ChatProvider } from './context/ChatContext'
 import { storage } from './utils/storage'
@@ -24,6 +25,7 @@ import StoriesPage from './pages/messenger/StoriesPage'
 import SwitchTransition from './components/shared/SwitchTransition'
 import StorageMonitor from './components/StorageMonitor'
 import NotificationBanner from './components/NotificationBanner'
+import InstallPWA from './components/InstallPWA'
 
 function ProtectedRoute({ children, requiredMode }) {
   const { user, mode, loading } = useAuth()
@@ -50,6 +52,19 @@ function ProtectedRoute({ children, requiredMode }) {
 export default function App() {
   const { loading } = useAuth()
 
+  useEffect(() => {
+    if ('Notification' in window && 
+        Notification.permission === 'default') {
+      // Small delay to not interrupt page load
+      setTimeout(() => {
+        Notification.requestPermission()
+          .then(permission => {
+            console.log('[Notifications] Permission:', permission)
+          })
+      }, 3000)
+    }
+  }, [])
+
   if (loading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -64,6 +79,7 @@ export default function App() {
     <>
     <StorageMonitor />
     <NotificationBanner />
+    <InstallPWA />
     <Routes>
       {/* Auth Routes */}
       <Route path="/register" element={<RegisterPage />} />

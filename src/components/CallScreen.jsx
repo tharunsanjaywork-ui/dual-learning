@@ -13,6 +13,7 @@ export default function CallScreen({ callId, otherUser, onEnd, isOutgoing, curre
   const timerRef = useRef(null)
   const remoteAudioRef = useRef(null)
   const unsubsRef = useRef([])
+  const remoteStreamRef = useRef(null)
 
   useEffect(() => {
     if (isOutgoing) {
@@ -30,6 +31,16 @@ export default function CallScreen({ callId, otherUser, onEnd, isOutgoing, curre
     return () => clearInterval(timerRef.current)
   }, [status])
 
+  // Attach remote stream when audio element becomes ready
+  useEffect(() => {
+    if (remoteAudioRef.current && remoteStreamRef.current) {
+      remoteAudioRef.current.srcObject = remoteStreamRef.current
+      remoteAudioRef.current.play()
+        .then(() => console.log('[Call] Audio attached via effect'))
+        .catch(err => console.warn('[Call] Play failed:', err))
+    }
+  }, [status]) // Re-run when status changes to 'connected'
+
   const formatDuration = (s) => {
     const m = Math.floor(s / 60)
     const sec = s % 60
@@ -38,10 +49,16 @@ export default function CallScreen({ callId, otherUser, onEnd, isOutgoing, curre
 
   const setupOnTrack = (pc) => {
     pc.ontrack = (e) => {
-      if (remoteAudioRef.current && e.streams[0]) {
-        remoteAudioRef.current.srcObject = e.streams[0]
-        remoteAudioRef.current.play()
-          .catch(err => console.warn('Audio play blocked:', err))
+      console.log('[Call] Remote track received:', e.streams)
+      if (e.streams && e.streams[0]) {
+        remoteStreamRef.current = e.streams[0]
+        // Try to attach immediately if ref is ready
+        if (remoteAudioRef.current) {
+          remoteAudioRef.current.srcObject = e.streams[0]
+          remoteAudioRef.current.play()
+            .then(() => console.log('[Call] Audio playing'))
+            .catch(err => console.warn('[Call] Play blocked:', err))
+        }
       }
     }
   }
@@ -53,6 +70,30 @@ export default function CallScreen({ callId, otherUser, onEnd, isOutgoing, curre
       localStreamRef.current = stream
       const pc = createPeerConnection()
       pcRef.current = pc
+
+      // Enable ICE trickling and restart
+      pc.onnegotiationneeded = () => {
+        console.log('[WebRTC] Negotiation needed')
+      }
+      pc.oniceconnectionstatechange = () => {
+        console.log('[WebRTC] ICE state:', pc.iceConnectionState)
+        if (pc.iceConnectionState === 'connected' || 
+            pc.iceConnectionState === 'completed') {
+          setStatus('connected')
+          // Try attaching stream again when ICE connects
+          if (remoteStreamRef.current && remoteAudioRef.current) {
+            remoteAudioRef.current.srcObject = remoteStreamRef.current
+            remoteAudioRef.current.play().catch(() => {})
+          }
+        }
+        if (pc.iceConnectionState === 'failed') {
+          console.error('[WebRTC] ICE failed - trying restart')
+          setStatus('failed')
+        }
+      }
+      pc.onconnectionstatechange = () => {
+        console.log('[WebRTC] Connection state:', pc.connectionState)
+      }
 
       // 1. Add local audio tracks
       stream.getTracks().forEach(t => pc.addTrack(t, stream))
@@ -142,6 +183,30 @@ export default function CallScreen({ callId, otherUser, onEnd, isOutgoing, curre
       localStreamRef.current = stream
       const pc = createPeerConnection()
       pcRef.current = pc
+
+      // Enable ICE trickling and restart
+      pc.onnegotiationneeded = () => {
+        console.log('[WebRTC] Negotiation needed')
+      }
+      pc.oniceconnectionstatechange = () => {
+        console.log('[WebRTC] ICE state:', pc.iceConnectionState)
+        if (pc.iceConnectionState === 'connected' || 
+            pc.iceConnectionState === 'completed') {
+          setStatus('connected')
+          // Try attaching stream again when ICE connects
+          if (remoteStreamRef.current && remoteAudioRef.current) {
+            remoteAudioRef.current.srcObject = remoteStreamRef.current
+            remoteAudioRef.current.play().catch(() => {})
+          }
+        }
+        if (pc.iceConnectionState === 'failed') {
+          console.error('[WebRTC] ICE failed - trying restart')
+          setStatus('failed')
+        }
+      }
+      pc.onconnectionstatechange = () => {
+        console.log('[WebRTC] Connection state:', pc.connectionState)
+      }
 
       // 1. Add local audio tracks
       stream.getTracks().forEach(t => pc.addTrack(t, stream))
@@ -251,7 +316,16 @@ export default function CallScreen({ callId, otherUser, onEnd, isOutgoing, curre
         ref={remoteAudioRef}
         autoPlay
         playsInline
-        onLoadedMetadata={() => remoteAudioRef.current?.play().catch(() => {})}
+        controls={false}
+        onLoadedMetadata={() => {
+          remoteAudioRef.current?.play()
+            .catch(() => {})
+        }}
+        onCanPlay={() => {
+          remoteAudioRef.current?.play()
+            .catch(() => {})
+        }}
+        style={{ display: 'none' }}
       />
 
       {/* Top — user info */}

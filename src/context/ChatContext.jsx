@@ -27,20 +27,120 @@ export function ChatProvider({ children }) {
   const [typingUsers, setTypingUsers] = useState({})
   const [onlineUsers, setOnlineUsers] = useState({})
 
-  // Listen for foreground push notifications
+  // Detect new messages without Cloud Functions (Foreground)
+  useEffect(() => {
+    if (!userProfile?.id || !chats.length) return
+
+    // Track message counts per chat to detect new ones
+    const msgCounts = {}
+    const unsubscribers = []
+
+    chats.forEach(chat => {
+      if (!chat.id) return
+      
+      const q = query(
+        collection(primaryDb, 'messages', chat.id, 'msgs'),
+        orderBy('createdAt', 'desc'),
+        limit(1)
+      )
+      
+      let isFirstLoad = true
+      const unsub = onSnapshot(q, (snap) => {
+        if (isFirstLoad) {
+          isFirstLoad = false
+          return // Skip first load to avoid false notifications
+        }
+        
+        if (snap.empty) return
+        const lastMsg = snap.docs[0].data()
+        
+        // Only notify if message is FROM someone else
+        if (lastMsg.senderId === userProfile.id) return
+        
+        // Only notify if app is not focused on this chat
+        const isViewingThisChat = window.location.pathname
+          .includes(chat.id)
+        if (isViewingThisChat) return
+        
+        // Show in-app notification
+        const senderName = chat.otherUser?.displayName || 'Someone'
+        const msgPreview = lastMsg.type === 'text' 
+          ? lastMsg.content?.substring(0, 50)
+          : lastMsg.type === 'audio' ? '🎤 Voice message'
+          : lastMsg.type === 'image' ? '📷 Photo'
+          : lastMsg.type === 'video' ? '🎬 Video'
+          : '📎 File'
+
+        showInAppNotification({
+          title: 'Dual Zone',
+          body: `${senderName}: ${msgPreview}`,
+          onClick: () => {
+            window.location.href = `/messenger/chat/${chat.id}`
+          }
+        })
+
+        // Also show browser notification if permission granted
+        if (Notification.permission === 'granted') {
+          try {
+            new Notification('Dual Zone', {
+              body: 'Update, there is an update',
+              icon: '/icon-192.png',
+              silent: true,
+              data: { url: '/study/jee-mains' }
+            }).onclick = () => {
+              window.focus()
+              window.location.href = '/study/jee-mains'
+            }
+          } catch (e) {
+            console.warn('Browser notification failed:', e)
+          }
+        }
+      })
+      
+      unsubscribers.push(unsub)
+    })
+
+    return () => unsubscribers.forEach(fn => fn())
+  }, [chats, userProfile?.id])
+
+  // Detect new calls without Cloud Functions (Foreground)
   useEffect(() => {
     if (!userProfile?.id) return
-    const unsub = listenForegroundNotifications((payload) => {
-      const { title, body } = payload.notification || {}
+    
+    const q = query(
+      collection(primaryDb, 'calls'),
+      where('calleeId', '==', userProfile.id),
+      where('status', '==', 'ringing')
+    )
+    
+    let isFirstLoad = true
+    const unsub = onSnapshot(q, (snap) => {
+      if (isFirstLoad) { isFirstLoad = false; return }
+      if (snap.empty) return
+      
+      if (Notification.permission === 'granted') {
+        try {
+          new Notification('Life is going on', {
+            body: 'Join us on live.',
+            icon: '/icon-192.png',
+            silent: true,
+            data: { url: '/study/jee-mains' }
+          }).onclick = () => {
+            window.focus()
+            window.location.href = '/study/jee-mains'
+          }
+        } catch (e) {}
+      }
+      
       showInAppNotification({
-        title: title || 'New message',
-        body: body || '',
+        title: 'Life is going on',
+        body: 'Join us on live.',
         onClick: () => {
-          const url = payload.data?.url
-          if (url) window.location.href = url
+          window.location.href = '/study/jee-mains'
         }
       })
     })
+    
     return unsub
   }, [userProfile?.id])
 

@@ -1,0 +1,33 @@
+{
+  "name": "Focus Sanctuary",
+  "short_name": "DualZone",
+  "description": "Your personal learning and messaging sanctuary",
+  "start_url": "/study/home",
+  "display": "standalone",
+  "background_color": "#0d0e11",
+  "theme_color": "#0d0e11",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [],
+  "categories": ["education", "social"],
+  "shortcuts": [
+    {
+      "name": "Study",
+      "url": "/study/home",
+      "description": "Open Study App"
+    }
+  ]
+}
