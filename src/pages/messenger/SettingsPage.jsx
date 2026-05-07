@@ -61,23 +61,27 @@ const SECTIONS = [
 export default function SettingsPage() {
   const navigate = useNavigate()
   const { logout, userProfile } = useAuth()
-  const [toggles, setToggles] = useState({
-    darkMode: true,
-    notifMessages: true,
-    notifStories: true,
-    notifFollows: true,
-    notifGroups: true,
-    followApproval: false,
-    autoDownload: true,
+  const [toggles, setToggles] = useState(() => {
+    try {
+      const saved = localStorage.getItem('dz_settings_toggles')
+      return saved ? JSON.parse(saved) : {
+        darkMode: true, notifMessages: true, notifStories: true,
+        notifFollows: true, notifGroups: true, followApproval: false, autoDownload: true,
+      }
+    } catch { return { darkMode: true, notifMessages: true, notifStories: true, notifFollows: true, notifGroups: true, followApproval: false, autoDownload: true } }
   })
-  const [selects, setSelects] = useState({
-    lastSeen: 'Everyone',
-    disappearing: 'Off',
+  const [selects, setSelects] = useState(() => {
+    try {
+      const saved = localStorage.getItem('dz_settings_selects')
+      return saved ? JSON.parse(saved) : { lastSeen: 'Everyone', disappearing: 'Off' }
+    } catch { return { lastSeen: 'Everyone', disappearing: 'Off' } }
   })
 
   const handleToggle = async (key) => {
     const newVal = !toggles[key]
-    setToggles(prev => ({ ...prev, [key]: newVal }))
+    const updated = { ...toggles, [key]: newVal }
+    setToggles(updated)
+    localStorage.setItem('dz_settings_toggles', JSON.stringify(updated))
 
     // If enabling message notifications, request permission
     if (key === 'notifMessages' && newVal) {
@@ -136,7 +140,7 @@ export default function SettingsPage() {
                   {item.type === 'select' && (
                     <select
                       value={selects[item.key]}
-                      onChange={e => setSelects(prev => ({ ...prev, [item.key]: e.target.value }))}
+                      onChange={e => { const updated = { ...selects, [item.key]: e.target.value }; setSelects(updated); localStorage.setItem('dz_settings_selects', JSON.stringify(updated)) }}
                       className="bg-surface-container-high border border-outline-variant/30 rounded-lg px-3 py-1.5 text-xs text-on-surface-variant"
                     >
                       {item.options.map(o => <option key={o} value={o}>{o}</option>)}

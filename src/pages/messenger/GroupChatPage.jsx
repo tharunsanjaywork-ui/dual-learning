@@ -72,9 +72,10 @@ export default function GroupChatPage() {
     await updateDoc(doc(db, 'groups', groupId), { members: arrayRemove(uid), admins: arrayRemove(uid) })
   }
 
-  const handleAddMember = async () => {
-    if (!addMemberInput.trim() || !group) return
-    const { docs } = await getDocs(query(collection(db, 'users'), where('username', '==', addMemberInput.trim())))
+  const handleAddMember = async (usernameOverride) => {
+    const username = (usernameOverride || addMemberInput).trim()
+    if (!username || !group) return
+    const { docs } = await getDocs(query(collection(db, 'users'), where('username', '==', username)))
     if (docs.length === 0) { alert('User not found'); return }
     const userId = docs[0].id
     if (group.members?.includes(userId)) { alert('Already a member'); return }
@@ -181,7 +182,7 @@ export default function GroupChatPage() {
             {/* Quick Actions */}
             <div className="grid grid-cols-2 gap-3 mb-6">
               {isAdmin && (
-                <button onClick={() => { const name = prompt('Add member username:'); if (name) { setAddMemberInput(name); handleAddMember() } }} className="bg-surface-container rounded-xl p-3 text-center hover:bg-surface-container-high transition-colors">
+                <button onClick={() => { const name = prompt('Add member username:'); if (name) handleAddMember(name) }} className="bg-surface-container rounded-xl p-3 text-center hover:bg-surface-container-high transition-colors">
                   <span className="material-symbols-outlined text-secondary text-xl block mb-1">person_add</span>
                   <span className="text-on-surface-variant text-xs">Add Member</span>
                 </button>

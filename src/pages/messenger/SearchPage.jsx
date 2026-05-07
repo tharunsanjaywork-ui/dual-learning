@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { db } from '../../lib/firebase'
-import { collection, getDocs, addDoc, serverTimestamp } from 'firebase/firestore'
+import { collection, getDocs, addDoc, serverTimestamp, doc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore'
 import { useAuth } from '../../context/AuthContext'
 import { useChat } from '../../context/ChatContext'
-import { doc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore'
 import { isUserOnline } from '../../utils/storage'
 
 const FILTERS = ['All Residents', 'Deep Thinkers', 'Designers', 'Night Owls', 'Early Birds']

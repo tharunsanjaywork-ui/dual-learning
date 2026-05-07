@@ -418,7 +418,7 @@ export default function ChatPage() {
           <div className="flex-1 min-w-0 text-left">
             <h3 className="text-on-surface font-medium text-sm truncate">{otherUser?.displayName || 'Loading...'}</h3>
             <p className="text-on-surface-variant text-xs">
-              {Object.keys(typingUsers).length > 0
+              {Object.keys(typingUsers).filter(uid => uid !== userProfile?.id).length > 0
                 ? <span className="text-secondary animate-pulse flex items-center gap-1">
                     <span className="typing-dot w-1 h-1 rounded-full bg-secondary inline-block" />
                     <span className="typing-dot w-1 h-1 rounded-full bg-secondary inline-block" />
@@ -584,17 +584,20 @@ export default function ChatPage() {
       )}
 
       {/* Audio Preview Bar — Task 1 */}
-      {recordState === 'preview' && audioPreviewRef.current && (
+      {recordState === 'preview' && audioPreviewRef.current && (() => {
+        const blobUrl = audioPreviewRef.current._blobUrl || (audioPreviewRef.current._blobUrl = URL.createObjectURL(audioPreviewRef.current))
+        return (
         <div className="audio-preview-bar">
           <button onClick={discardPreview} className="p-2 rounded-xl text-error hover:bg-error/10 active:scale-95 transition-all">
             <span className="material-symbols-outlined text-xl">delete</span>
           </button>
-          <audio controls src={URL.createObjectURL(audioPreviewRef.current)} className="flex-1 rounded-xl" style={{height:'36px'}} />
+          <audio controls src={blobUrl} className="flex-1 rounded-xl" style={{height:'36px'}} />
           <button onClick={sendAudioPreview} className="p-2.5 rounded-xl bg-secondary text-on-secondary hover:scale-105 active:scale-95 transition-all shadow-lg shadow-secondary/30">
             <span className="material-symbols-outlined text-xl">send</span>
           </button>
         </div>
-      )}
+        )
+      })()}
 
       {/* Input Bar — Task 1 recording state / Task 2 mobile layout */}
       <div className="bg-surface-container-low border-t border-outline-variant/20 flex-shrink-0 chat-input-mobile">

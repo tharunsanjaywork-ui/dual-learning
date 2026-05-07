@@ -16,7 +16,7 @@ export default function ChatListPage() {
   const filteredChats = chats.filter(chat => {
     if (filter === 'Archived') return chat.archivedBy?.includes(userProfile?.id)
     if (filter === 'Groups') return chat.participants?.length > 2
-    if (filter === 'Unread') return true
+    if (filter === 'Unread') return chat.lastMessageSenderId && chat.lastMessageSenderId !== userProfile?.id && !chat.lastMessageSeen?.includes(userProfile?.id)
     return !chat.archivedBy?.includes(userProfile?.id)
   }).filter(chat => {
     if (!searchQuery) return true

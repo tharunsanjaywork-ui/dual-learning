@@ -211,6 +211,30 @@ export default function NotificationsPage() {
               </div>
             </section>
           )}
+
+          {/* Other Notifications */}
+          {otherNotifs.length > 0 && (
+            <section>
+              <h3 className="text-on-surface-variant text-xs font-medium uppercase tracking-wider mb-3 flex items-center gap-2">
+                <span className="material-symbols-outlined text-base">info</span>Other
+              </h3>
+              <div className="bg-surface-container border border-outline-variant/20 rounded-2xl divide-y divide-outline-variant/10">
+                {otherNotifs.map(n => (
+                  <div key={n.id} className={`flex items-center gap-3 px-4 py-3 ${!n.read ? 'border-l-2 border-l-secondary' : ''}`}>
+                    <div className="w-10 h-10 rounded-full bg-surface-container-highest flex items-center justify-center flex-shrink-0">
+                      <span className="material-symbols-outlined text-outline text-base">notifications</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-on-surface text-sm">
+                        <span className="font-medium">{n.data?.fromName || 'System'}</span>
+                        <span className="text-on-surface-variant"> {n.data?.message || n.type || 'sent you a notification'}</span>
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
         </div>
       )}
     </div>

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { getVideosBySubject, getThumbnail } from '../../data/videos'
 import { storage } from '../../utils/storage'
 
@@ -141,9 +142,9 @@ export default function SubjectPage({ subject }) {
             <span className="material-symbols-outlined text-primary text-6xl mb-4 block opacity-30">quiz</span>
             <h3 className="font-headline text-xl font-bold text-on-surface mb-2">Subject Quiz</h3>
             <p className="text-on-surface-variant text-sm mb-6">Test your knowledge on {info.title}</p>
-            <a href="/study/quiz" className="inline-flex items-center gap-2 gradient-primary text-white px-6 py-3 rounded-full font-medium hover:scale-105 transition-transform">
+            <Link to="/study/quiz" className="inline-flex items-center gap-2 gradient-primary text-white px-6 py-3 rounded-full font-medium hover:scale-105 transition-transform">
               <span className="material-symbols-outlined text-lg">play_arrow</span>Start Quiz
-            </a>
+            </Link>
           </div>
         )}
 
