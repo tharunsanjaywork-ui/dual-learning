@@ -3,7 +3,14 @@ const express = require('express')
 const app = express()
 
 // Initialize Firebase Admin with service account
-const serviceAccount = require('./serviceAccount.json')
+// On Render: reads from environment variable
+// Locally: reads from serviceAccount.json file
+let serviceAccount
+if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+  serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)
+} else {
+  serviceAccount = require('./serviceAccount.json')
+}
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount)
 })
