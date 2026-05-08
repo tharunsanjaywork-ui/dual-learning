@@ -9,7 +9,7 @@ import {
   doc, getDocs, serverTimestamp, limit, arrayUnion, arrayRemove, setDoc, getDoc,
 } from 'firebase/firestore'
 import { useAuth } from './AuthContext'
-import { listenForegroundNotifications, showInAppNotification } from '../lib/notifications'
+import { showInAppNotification } from '../lib/notifications'
 import { isUserOnline } from '../utils/storage'
 
 const ChatContext = createContext(null)

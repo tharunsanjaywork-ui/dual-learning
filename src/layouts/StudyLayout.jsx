@@ -127,10 +127,10 @@ export default function StudyLayout() {
                       <p className="text-on-surface-variant text-xs truncate">@{userProfile?.username}</p>
                     </div>
                     <div className="h-px bg-outline-variant/20 my-1" />
-                    <button className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors">
+                    <button onClick={() => { setAvatarOpen(false); navigate(`/study/home`) }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors">
                       <span className="material-symbols-outlined text-lg">person</span>View Profile
                     </button>
-                    <button className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors">
+                    <button onClick={() => { setAvatarOpen(false); navigate(`/study/home`) }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors">
                       <span className="material-symbols-outlined text-lg">edit</span>Edit Profile
                     </button>
                     <button onClick={() => { setAvatarOpen(false); setSwitchOpen(true) }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors">

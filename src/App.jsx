@@ -179,8 +179,8 @@ export default function App() {
         <Route path="search" element={<SearchPage />} />
         <Route path="stories" element={<StoriesPage />} />
         <Route path="notifications" element={<NotificationsPage />} />
-        <Route path="profile/:userId" element={<ProfilePage />} />
         <Route path="profile/edit" element={<EditProfilePage />} />
+        <Route path="profile/:userId" element={<ProfilePage />} />
         <Route path="settings" element={<SettingsPage />} />
       </Route>
 
