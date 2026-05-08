@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { requestNotificationPermission } from '../../lib/notifications'
+import { uploadToCloudinary } from '../../lib/cloudinary'
 
 const SECTIONS = [
   {
@@ -9,7 +10,7 @@ const SECTIONS = [
     icon: 'palette',
     items: [
       { label: 'Dark / Light Mode', icon: 'dark_mode', type: 'toggle', key: 'darkMode' },
-      { label: 'Chat Wallpaper', icon: 'wallpaper', type: 'link' },
+      { label: 'Chat Wallpaper', icon: 'wallpaper', type: 'wallpaper' },
     ],
   },
   {
@@ -61,6 +62,10 @@ const SECTIONS = [
 export default function SettingsPage() {
   const navigate = useNavigate()
   const { logout, userProfile } = useAuth()
+  const wallpaperInputRef = useRef(null)
+  const [wallpaperUploading, setWallpaperUploading] = useState(false)
+  const [currentWallpaper, setCurrentWallpaper] = useState(() => localStorage.getItem('dz_chat_wallpaper') || '')
+
   const [toggles, setToggles] = useState(() => {
     try {
       const saved = localStorage.getItem('dz_settings_toggles')
@@ -77,11 +82,29 @@ export default function SettingsPage() {
     } catch { return { lastSeen: 'Everyone', disappearing: 'Off' } }
   })
 
+  // Apply dark/light mode on mount
+  useEffect(() => {
+    if (toggles.darkMode) {
+      document.documentElement.classList.remove('light-mode')
+    } else {
+      document.documentElement.classList.add('light-mode')
+    }
+  }, [toggles.darkMode])
+
   const handleToggle = async (key) => {
     const newVal = !toggles[key]
     const updated = { ...toggles, [key]: newVal }
     setToggles(updated)
     localStorage.setItem('dz_settings_toggles', JSON.stringify(updated))
+
+    // Dark mode toggle — apply/remove class immediately
+    if (key === 'darkMode') {
+      if (newVal) {
+        document.documentElement.classList.remove('light-mode')
+      } else {
+        document.documentElement.classList.add('light-mode')
+      }
+    }
 
     // If enabling message notifications, request permission
     if (key === 'notifMessages' && newVal) {
@@ -89,16 +112,46 @@ export default function SettingsPage() {
         const token = await requestNotificationPermission(userProfile?.id)
         if (!token) {
           // Permission denied — revert toggle
-          setToggles(prev => ({ ...prev, [key]: false }))
+          const reverted = { ...updated, [key]: false }
+          setToggles(reverted)
+          localStorage.setItem('dz_settings_toggles', JSON.stringify(reverted))
           alert('Notification permission was denied. Please enable it in browser settings.')
         } else {
           console.log('[DualZone] FCM token saved via settings')
         }
       } catch (err) {
         console.error('Notification setup error:', err)
-        setToggles(prev => ({ ...prev, [key]: false }))
+        const reverted = { ...updated, [key]: false }
+        setToggles(reverted)
+        localStorage.setItem('dz_settings_toggles', JSON.stringify(reverted))
       }
     }
+  }
+
+  // Chat wallpaper upload handler
+  const handleWallpaperUpload = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setWallpaperUploading(true)
+    try {
+      const url = await uploadToCloudinary(file)
+      if (url) {
+        localStorage.setItem('dz_chat_wallpaper', url)
+        setCurrentWallpaper(url)
+      }
+    } catch (err) {
+      console.error('Wallpaper upload failed:', err)
+      alert('Failed to upload wallpaper. Please try again.')
+    } finally {
+      setWallpaperUploading(false)
+      // Reset file input
+      if (wallpaperInputRef.current) wallpaperInputRef.current.value = ''
+    }
+  }
+
+  const removeWallpaper = () => {
+    localStorage.removeItem('dz_chat_wallpaper')
+    setCurrentWallpaper('')
   }
 
   const handleLogout = async () => {
@@ -114,6 +167,15 @@ export default function SettingsPage() {
         </button>
         <h1 className="font-headline text-2xl font-bold text-on-surface">Settings</h1>
       </div>
+
+      {/* Hidden file input for wallpaper */}
+      <input
+        ref={wallpaperInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleWallpaperUpload}
+      />
 
       <div className="space-y-6">
         {SECTIONS.map(section => (
@@ -135,6 +197,32 @@ export default function SettingsPage() {
                     >
                       <div className={`w-5 h-5 rounded-full bg-white absolute top-0.5 transition-transform shadow-sm ${toggles[item.key] ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
                     </button>
+                  )}
+
+                  {item.type === 'wallpaper' && (
+                    <div className="flex items-center gap-2">
+                      {currentWallpaper && (
+                        <>
+                          <div className="w-8 h-8 rounded-lg overflow-hidden border border-outline-variant/30">
+                            <img src={currentWallpaper} alt="wallpaper" className="w-full h-full object-cover" />
+                          </div>
+                          <button onClick={removeWallpaper} className="p-1 rounded-lg hover:bg-error/10 transition-colors" title="Remove wallpaper">
+                            <span className="material-symbols-outlined text-error text-sm">close</span>
+                          </button>
+                        </>
+                      )}
+                      <button
+                        onClick={() => wallpaperInputRef.current?.click()}
+                        disabled={wallpaperUploading}
+                        className="p-1 rounded-lg hover:bg-surface-container-high transition-colors"
+                      >
+                        {wallpaperUploading ? (
+                          <div className="w-5 h-5 border-2 border-secondary border-t-transparent rounded-full animate-spin" />
+                        ) : (
+                          <span className="material-symbols-outlined text-outline text-lg">chevron_right</span>
+                        )}
+                      </button>
+                    </div>
                   )}
 
                   {item.type === 'select' && (

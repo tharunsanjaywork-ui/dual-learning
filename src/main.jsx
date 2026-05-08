@@ -5,6 +5,17 @@ import App from './App'
 import { AuthProvider } from './context/AuthContext'
 import './index.css'
 
+// Apply saved theme mode before React renders (prevents flash)
+try {
+  const saved = localStorage.getItem('dz_settings_toggles')
+  if (saved) {
+    const toggles = JSON.parse(saved)
+    if (toggles.darkMode === false) {
+      document.documentElement.classList.add('light-mode')
+    }
+  }
+} catch {}
+
 // Register Firebase service worker for push notifications
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {

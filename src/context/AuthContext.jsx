@@ -218,6 +218,23 @@ export function AuthProvider({ children }) {
 
   // Login with dual-password check
   const login = async (username, password) => {
+    // ═══ RATE LIMITING ═══
+    const loginAttempts = parseInt(sessionStorage.getItem('dz_login_attempts') || '0')
+    const lastAttempt = parseInt(sessionStorage.getItem('dz_last_attempt') || '0')
+    const now = Date.now()
+
+    // Reset counter after 15 minutes
+    if (now - lastAttempt > 15 * 60 * 1000) {
+      sessionStorage.setItem('dz_login_attempts', '0')
+    } else if (loginAttempts >= 5) {
+      const waitMins = Math.ceil((15 * 60 * 1000 - (now - lastAttempt)) / 60000)
+      throw new Error(`Too many attempts. Wait ${waitMins} minutes.`)
+    }
+
+    // Increment attempts
+    sessionStorage.setItem('dz_login_attempts', String(loginAttempts + 1))
+    sessionStorage.setItem('dz_last_attempt', String(now))
+
     const email = `${username}@dualzone.app`
     const secretEmail = `${username}_secret@dualzone.app`
 
@@ -261,6 +278,9 @@ export function AuthProvider({ children }) {
       // Request notification permission and save FCM token
       requestNotificationPermission(firestoreId).catch(() => {})
 
+      // Reset rate limit counter on success
+      sessionStorage.setItem('dz_login_attempts', '0')
+
       // Allow onAuthStateChanged to work again after a delay
       setTimeout(() => { isLoggingIn.current = false }, 2000)
 
@@ -290,6 +310,9 @@ export function AuthProvider({ children }) {
 
         // Request notification permission and save FCM token
         requestNotificationPermission(firestoreId).catch(() => {})
+
+        // Reset rate limit counter on success
+        sessionStorage.setItem('dz_login_attempts', '0')
 
         // Allow onAuthStateChanged to work again after a delay
         setTimeout(() => { isLoggingIn.current = false }, 2000)

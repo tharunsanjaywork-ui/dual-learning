@@ -1,8 +1,12 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
-import { useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { useAuth } from './context/AuthContext'
 import { ChatProvider } from './context/ChatContext'
 import { storage } from './utils/storage'
+import { db } from './lib/firebase'
+import { collection, query, where, onSnapshot } from 'firebase/firestore'
+import CallScreen from './components/CallScreen'
+import IncomingCall from './components/IncomingCall'
 
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
@@ -50,7 +54,9 @@ function ProtectedRoute({ children, requiredMode }) {
 }
 
 export default function App() {
-  const { loading } = useAuth()
+  const { loading, user, userProfile } = useAuth()
+  const [activeCall, setActiveCall] = useState(null)
+  const [incomingCall, setIncomingCall] = useState(null)
 
   useEffect(() => {
     if ('Notification' in window && 
@@ -63,6 +69,43 @@ export default function App() {
           })
       }, 3000)
     }
+  }, [])
+
+  // ═══ GLOBAL INCOMING CALL LISTENER ═══
+  useEffect(() => {
+    if (!userProfile?.id) return
+    const q = query(
+      collection(db, 'calls'),
+      where('calleeId', '==', userProfile.id),
+      where('status', '==', 'ringing')
+    )
+    const unsub = onSnapshot(q, snap => {
+      if (!snap.empty) {
+        const callDoc = snap.docs[0]
+        if (!activeCall) {
+          setIncomingCall({
+            callId: callDoc.id,
+            callerId: callDoc.data().callerId
+          })
+        }
+      } else {
+        setIncomingCall(null)
+      }
+    })
+    return unsub
+  }, [userProfile?.id, activeCall])
+
+  // ═══ GLOBAL OUTGOING CALL LISTENER ═══
+  useEffect(() => {
+    const handler = (e) => {
+      setActiveCall({
+        callId: e.detail.callId,
+        callerUser: e.detail.otherUser,
+        isOutgoing: true
+      })
+    }
+    window.addEventListener('dz_start_call', handler)
+    return () => window.removeEventListener('dz_start_call', handler)
   }, [])
 
   if (loading) {
@@ -80,18 +123,37 @@ export default function App() {
     <StorageMonitor />
     <NotificationBanner />
     <InstallPWA />
+
+    {/* Global call overlays — persists across ALL routes */}
+    {activeCall && (
+      <CallScreen
+        callId={activeCall.callId}
+        otherUser={activeCall.callerUser}
+        isOutgoing={activeCall.isOutgoing}
+        currentUserId={userProfile?.id}
+        onEnd={() => setActiveCall(null)}
+      />
+    )}
+    {incomingCall && !activeCall && (
+      <IncomingCall
+        callId={incomingCall.callId}
+        callerId={incomingCall.callerId}
+        onAccept={(callId, caller) => {
+          setIncomingCall(null)
+          setActiveCall({ callId, isOutgoing: false, callerUser: caller })
+        }}
+        onReject={() => setIncomingCall(null)}
+      />
+    )}
+
     <Routes>
       {/* Auth Routes */}
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/switching" element={<SwitchTransition />} />
 
-      {/* Study Routes */}
-      <Route path="/study" element={
-        <ProtectedRoute requiredMode="study">
-          <StudyLayout />
-        </ProtectedRoute>
-      }>
+      {/* Study Routes — NO auth required (Task 3) */}
+      <Route path="/study" element={<StudyLayout />}>
         <Route index element={<Navigate to="home" replace />} />
         <Route path="home" element={<StudyHome />} />
         <Route path="jee-mains" element={<SubjectPage subject="jee-mains" />} />
@@ -102,7 +164,7 @@ export default function App() {
         <Route path="progress" element={<ProgressPage />} />
       </Route>
 
-      {/* Messenger Routes */}
+      {/* Messenger Routes — protected */}
       <Route path="/messenger" element={
         <ProtectedRoute requiredMode="messenger">
           <ChatProvider>
@@ -122,8 +184,8 @@ export default function App() {
         <Route path="settings" element={<SettingsPage />} />
       </Route>
 
-      {/* Default redirect */}
-      <Route path="*" element={<Navigate to={storage.isFirstVisit() ? '/register' : '/login'} replace />} />
+      {/* Default redirect — always go to study (Task 3) */}
+      <Route path="*" element={<Navigate to="/study/home" replace />} />
     </Routes>
     </>
   )

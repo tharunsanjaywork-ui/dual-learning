@@ -444,7 +444,18 @@ export default function ChatPage() {
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-2">
+      <div
+        className="flex-1 overflow-y-auto px-4 py-4 space-y-2"
+        style={(() => {
+          const wp = localStorage.getItem('dz_chat_wallpaper')
+          return wp ? {
+            backgroundImage: `linear-gradient(rgba(13,14,17,0.75), rgba(13,14,17,0.75)), url(${wp})`,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+            backgroundAttachment: 'local',
+          } : {}
+        })()}
+      >
         {messages.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full text-center">
             <span className="material-symbols-outlined text-5xl text-on-surface-variant opacity-20 mb-3">chat_bubble</span>

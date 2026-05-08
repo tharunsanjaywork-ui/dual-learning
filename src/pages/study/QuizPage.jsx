@@ -10,7 +10,7 @@ const EXAMS = [
 ]
 
 export default function QuizPage() {
-  const { saveQuizScore, updateStreak } = useAuth()
+  const { userProfile, saveQuizScore, updateStreak } = useAuth()
   const [screen, setScreen] = useState('select') // 'select' | 'quiz' | 'results'
   const [selectedExam, setSelectedExam] = useState(null)
   const [questions, setQuestions] = useState([])
@@ -75,16 +75,18 @@ export default function QuizPage() {
       })
       storage.markStudiedToday()
 
-      // Save to Firestore
-      const scoreData = {
-        subject: selectedExam,
-        score,
-        total: questions.length,
-        timeTaken,
-        date: new Date().toISOString(),
+      // Save to Firestore only if logged in
+      if (userProfile?.id) {
+        const scoreData = {
+          subject: selectedExam,
+          score,
+          total: questions.length,
+          timeTaken,
+          date: new Date().toISOString(),
+        }
+        saveQuizScore(scoreData).catch(() => {})
+        updateStreak().catch(() => {})
       }
-      saveQuizScore(scoreData).catch(() => {})
-      updateStreak().catch(() => {})
 
       setScreen('results')
     }

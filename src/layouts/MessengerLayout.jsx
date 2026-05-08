@@ -1,10 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { db } from '../lib/firebase'
-import { collection, query, where, onSnapshot } from 'firebase/firestore'
-import CallScreen from '../components/CallScreen'
-import IncomingCall from '../components/IncomingCall'
 
 const MOBILE_NAV = [
   { to: '/messenger/chats', label: 'Home', icon: 'home' },
@@ -20,8 +16,6 @@ export default function MessengerLayout() {
   const location = useLocation()
   const [searchQuery, setSearchQuery] = useState('')
   const [avatarOpen, setAvatarOpen] = useState(false)
-  const [activeCall, setActiveCall] = useState(null)
-  const [incomingCall, setIncomingCall] = useState(null)
 
   const cameFromNotification = new URLSearchParams(window.location.search).get('from') === 'notification'
 
@@ -37,41 +31,6 @@ export default function MessengerLayout() {
 
   // Check if we're in a chat (hide bottom nav on mobile)
   const isInChat = location.pathname.includes('/chat/') || location.pathname.includes('/group/')
-
-  // ═══ INCOMING CALL LISTENER (works on ALL messenger pages) ═══
-  useEffect(() => {
-    if (!userProfile?.id) return
-    const q = query(
-      collection(db, 'calls'),
-      where('calleeId', '==', userProfile.id),
-      where('status', '==', 'ringing')
-    )
-    const unsub = onSnapshot(q, snap => {
-      if (!snap.empty) {
-        const callDoc = snap.docs[0]
-        setIncomingCall({
-          callId: callDoc.id,
-          callerId: callDoc.data().callerId
-        })
-      } else {
-        setIncomingCall(null)
-      }
-    })
-    return unsub
-  }, [userProfile?.id])
-
-  // ═══ OUTGOING CALL LISTENER (dispatched from ChatPage) ═══
-  useEffect(() => {
-    const handler = (e) => {
-      setActiveCall({
-        callId: e.detail.callId,
-        callerUser: e.detail.otherUser,
-        isOutgoing: true
-      })
-    }
-    window.addEventListener('dz_start_call', handler)
-    return () => window.removeEventListener('dz_start_call', handler)
-  }, [])
 
   return (
     <div className="min-h-screen bg-background">
@@ -206,28 +165,6 @@ export default function MessengerLayout() {
             ))}
           </div>
         </nav>
-      )}
-
-      {/* ═══ CALL OVERLAYS (global — works on all messenger pages) ═══ */}
-      {activeCall && (
-        <CallScreen
-          callId={activeCall.callId}
-          otherUser={activeCall.callerUser}
-          isOutgoing={activeCall.isOutgoing}
-          currentUserId={userProfile?.id}
-          onEnd={() => setActiveCall(null)}
-        />
-      )}
-      {incomingCall && !activeCall && (
-        <IncomingCall
-          callId={incomingCall.callId}
-          callerId={incomingCall.callerId}
-          onAccept={(callId, caller) => {
-            setIncomingCall(null)
-            setActiveCall({ callId, isOutgoing: false, callerUser: caller })
-          }}
-          onReject={() => setIncomingCall(null)}
-        />
       )}
     </div>
   )

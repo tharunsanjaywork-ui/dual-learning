@@ -39,7 +39,22 @@ export default function CallScreen({ callId, otherUser, onEnd, isOutgoing, curre
         .then(() => console.log('[Call] Audio attached via effect'))
         .catch(err => console.warn('[Call] Play failed:', err))
     }
-  }, [status]) // Re-run when status changes to 'connected'
+  }, [status, muted]) // Re-run when status changes OR mute toggles
+
+  // Continuous audio health check — reattach if srcObject is lost
+  useEffect(() => {
+    if (status !== 'connected') return
+    const checkAudio = setInterval(() => {
+      if (remoteAudioRef.current && remoteStreamRef.current) {
+        if (!remoteAudioRef.current.srcObject) {
+          console.log('[Call] Reattaching lost audio')
+          remoteAudioRef.current.srcObject = remoteStreamRef.current
+          remoteAudioRef.current.play().catch(() => {})
+        }
+      }
+    }, 2000)
+    return () => clearInterval(checkAudio)
+  }, [status])
 
   const formatDuration = (s) => {
     const m = Math.floor(s / 60)
@@ -304,10 +319,18 @@ export default function CallScreen({ callId, otherUser, onEnd, isOutgoing, curre
 
   const toggleMute = () => {
     const track = localStreamRef.current?.getAudioTracks()[0]
-    if (track) {
-      track.enabled = !track.enabled
-      setMuted(!track.enabled)
-    }
+    if (!track) return
+    const newMutedState = track.enabled // if currently enabled, we ARE about to mute
+    track.enabled = !track.enabled
+    setMuted(newMutedState) // muted = true when track is now disabled
+    // After state change, ensure audio element still has the remote stream
+    setTimeout(() => {
+      if (remoteAudioRef.current && remoteStreamRef.current &&
+          !remoteAudioRef.current.srcObject) {
+        remoteAudioRef.current.srcObject = remoteStreamRef.current
+        remoteAudioRef.current.play().catch(() => {})
+      }
+    }, 100)
   }
 
   return (

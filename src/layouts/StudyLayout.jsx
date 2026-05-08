@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Outlet, NavLink, useNavigate } from 'react-router-dom'
+import { Outlet, NavLink, useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import SwitchModal from '../components/shared/SwitchModal'
 
@@ -22,7 +22,7 @@ const MOBILE_NAV = [
 ]
 
 export default function StudyLayout() {
-  const { userProfile, logout } = useAuth()
+  const { user, userProfile, logout } = useAuth()
   const navigate = useNavigate()
   const [switchOpen, setSwitchOpen] = useState(false)
   const [avatarOpen, setAvatarOpen] = useState(false)
@@ -33,6 +33,15 @@ export default function StudyLayout() {
   const handleLogout = async () => {
     await logout()
     navigate('/login', { replace: true })
+  }
+
+  // Switch button: if not logged in, go to login. If logged in, show auth modal.
+  const handleSwitch = () => {
+    if (!user) {
+      navigate('/login')
+      return
+    }
+    setSwitchOpen(true)
   }
 
   return (
@@ -84,7 +93,7 @@ export default function StudyLayout() {
           {/* Switch Button */}
           {!cameFromNotification && (
           <button
-            onClick={() => setSwitchOpen(true)}
+            onClick={handleSwitch}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium text-on-surface-variant hover:text-primary hover:bg-primary/10 transition-all"
             title="Switch Mode"
           >
@@ -93,51 +102,58 @@ export default function StudyLayout() {
           </button>
           )}
 
-          {/* Avatar */}
-          <div className="relative">
-            <button
-              onClick={() => setAvatarOpen(!avatarOpen)}
-              className="w-9 h-9 rounded-full overflow-hidden border-2 border-outline-variant/50 hover:border-primary transition-colors"
-            >
-              {userProfile?.profilePic ? (
-                <img src={userProfile.profilePic} alt="" className="w-full h-full object-cover" />
-              ) : (
-                <div className="w-full h-full bg-surface-container-highest flex items-center justify-center">
-                  <span className="material-symbols-outlined text-outline text-lg">person</span>
-                </div>
-              )}
-            </button>
-
-            {avatarOpen && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setAvatarOpen(false)} />
-                <div className="absolute right-0 top-12 z-50 w-56 glass-strong rounded-2xl p-2 shadow-2xl border border-outline-variant/20 animate-scale-in">
-                  <div className="px-3 py-2 mb-1">
-                    <p className="text-on-surface font-medium text-sm truncate">{userProfile?.displayName}</p>
-                    <p className="text-on-surface-variant text-xs truncate">@{userProfile?.username}</p>
+          {/* Avatar / Sign In */}
+          {user && userProfile ? (
+            <div className="relative">
+              <button
+                onClick={() => setAvatarOpen(!avatarOpen)}
+                className="w-9 h-9 rounded-full overflow-hidden border-2 border-outline-variant/50 hover:border-primary transition-colors"
+              >
+                {userProfile?.profilePic ? (
+                  <img src={userProfile.profilePic} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full bg-surface-container-highest flex items-center justify-center">
+                    <span className="material-symbols-outlined text-outline text-lg">person</span>
                   </div>
-                  <div className="h-px bg-outline-variant/20 my-1" />
-                  <button className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors">
-                    <span className="material-symbols-outlined text-lg">person</span>View Profile
-                  </button>
-                  <button className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors">
-                    <span className="material-symbols-outlined text-lg">edit</span>Edit Profile
-                  </button>
-                  <button onClick={() => { setAvatarOpen(false); setSwitchOpen(true) }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors">
-                    <span className="material-symbols-outlined text-lg">swap_horiz</span>Switch Mode
-                  </button>
-                  <div className="h-px bg-outline-variant/20 my-1" />
-                  <button onClick={handleLogout} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-error hover:bg-error-container/20 transition-colors">
-                    <span className="material-symbols-outlined text-lg">logout</span>Logout
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
+                )}
+              </button>
+
+              {avatarOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setAvatarOpen(false)} />
+                  <div className="absolute right-0 top-12 z-50 w-56 glass-strong rounded-2xl p-2 shadow-2xl border border-outline-variant/20 animate-scale-in">
+                    <div className="px-3 py-2 mb-1">
+                      <p className="text-on-surface font-medium text-sm truncate">{userProfile?.displayName}</p>
+                      <p className="text-on-surface-variant text-xs truncate">@{userProfile?.username}</p>
+                    </div>
+                    <div className="h-px bg-outline-variant/20 my-1" />
+                    <button className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors">
+                      <span className="material-symbols-outlined text-lg">person</span>View Profile
+                    </button>
+                    <button className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors">
+                      <span className="material-symbols-outlined text-lg">edit</span>Edit Profile
+                    </button>
+                    <button onClick={() => { setAvatarOpen(false); setSwitchOpen(true) }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors">
+                      <span className="material-symbols-outlined text-lg">swap_horiz</span>Switch Mode
+                    </button>
+                    <div className="h-px bg-outline-variant/20 my-1" />
+                    <button onClick={handleLogout} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-error hover:bg-error-container/20 transition-colors">
+                      <span className="material-symbols-outlined text-lg">logout</span>Logout
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          ) : (
+            <Link to="/login" className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium text-on-surface-variant hover:text-primary hover:bg-primary/10 transition-all">
+              <span className="material-symbols-outlined text-lg">login</span>
+              <span>Sign In</span>
+            </Link>
+          )}
         </div>
       </nav>
 
-      {/* Mobile Top Bar - shows switch button */}
+      {/* Mobile Top Bar */}
       <div className="md:hidden fixed top-0 left-0 right-0 z-50 h-14 bg-surface-container-low/80 backdrop-blur-xl border-b border-outline-variant/20 px-3 flex items-center">
         <NavLink to="/study/home" className="flex items-center gap-2 flex-shrink-0">
           <div className="w-8 h-8 rounded-lg gradient-primary flex items-center justify-center">
@@ -149,7 +165,7 @@ export default function StudyLayout() {
         {/* Mobile Switch Button */}
         {!cameFromNotification && (
         <button
-          onClick={() => setSwitchOpen(true)}
+          onClick={handleSwitch}
           className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-medium text-on-surface-variant hover:text-primary hover:bg-primary/10 transition-all mr-1"
           title="Switch Mode"
         >
@@ -157,19 +173,25 @@ export default function StudyLayout() {
           <span className="text-xs">Switch</span>
         </button>
         )}
-        {/* Mobile Avatar */}
-        <button
-          onClick={() => setAvatarOpen(!avatarOpen)}
-          className="w-8 h-8 rounded-full overflow-hidden border-2 border-outline-variant/50"
-        >
-          {userProfile?.profilePic ? (
-            <img src={userProfile.profilePic} alt="" className="w-full h-full object-cover" />
-          ) : (
-            <div className="w-full h-full bg-surface-container-highest flex items-center justify-center">
-              <span className="material-symbols-outlined text-outline text-sm">person</span>
-            </div>
-          )}
-        </button>
+        {/* Mobile Avatar / Sign In */}
+        {user && userProfile ? (
+          <button
+            onClick={() => setAvatarOpen(!avatarOpen)}
+            className="w-8 h-8 rounded-full overflow-hidden border-2 border-outline-variant/50"
+          >
+            {userProfile?.profilePic ? (
+              <img src={userProfile.profilePic} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full bg-surface-container-highest flex items-center justify-center">
+                <span className="material-symbols-outlined text-outline text-sm">person</span>
+              </div>
+            )}
+          </button>
+        ) : (
+          <Link to="/login" className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-medium text-on-surface-variant hover:text-primary hover:bg-primary/10 transition-all">
+            <span className="material-symbols-outlined text-lg">login</span>
+          </Link>
+        )}
       </div>
 
       {/* Page Content */}
@@ -197,8 +219,8 @@ export default function StudyLayout() {
         </div>
       </nav>
 
-      {/* Switch Modal */}
-      <SwitchModal isOpen={switchOpen} onClose={() => setSwitchOpen(false)} />
+      {/* Switch Modal — only show if logged in */}
+      {user && <SwitchModal isOpen={switchOpen} onClose={() => setSwitchOpen(false)} />}
     </div>
   )
 }
