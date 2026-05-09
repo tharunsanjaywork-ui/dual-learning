@@ -88,11 +88,11 @@ export default function MessengerLayout() {
           {!cameFromNotification && (
           <button
             onClick={handleSwitch}
-            className="flex items-center gap-1 px-2 md:px-3 py-2 rounded-xl text-sm font-medium text-on-surface-variant hover:text-secondary hover:bg-secondary/10 transition-all"
+            className="relative flex items-center gap-2 px-3 py-2 rounded-full bg-gradient-to-r from-secondary/20 to-primary/20 border border-secondary/30 hover:from-secondary/30 hover:to-primary/30 transition-all duration-300 text-on-surface group"
             title="Switch to Study"
           >
-            <span className="material-symbols-outlined text-lg">swap_horiz</span>
-            <span className="hidden lg:inline">Switch</span>
+            <span className="material-symbols-outlined text-secondary text-lg group-hover:rotate-180 transition-transform duration-500">swap_horiz</span>
+            <span className="hidden lg:inline text-sm font-medium">Switch</span>
           </button>
           )}
 

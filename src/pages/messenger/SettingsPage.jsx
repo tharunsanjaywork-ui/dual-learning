@@ -9,7 +9,6 @@ const SECTIONS = [
     title: 'APPEARANCE',
     icon: 'palette',
     items: [
-      { label: 'Dark / Light Mode', icon: 'dark_mode', type: 'toggle', key: 'darkMode' },
       { label: 'Chat Wallpaper', icon: 'wallpaper', type: 'wallpaper' },
     ],
   },
@@ -70,10 +69,10 @@ export default function SettingsPage() {
     try {
       const saved = localStorage.getItem('dz_settings_toggles')
       return saved ? JSON.parse(saved) : {
-        darkMode: true, notifMessages: true, notifStories: true,
+        notifMessages: true, notifStories: true,
         notifFollows: true, notifGroups: true, followApproval: false, autoDownload: true,
       }
-    } catch { return { darkMode: true, notifMessages: true, notifStories: true, notifFollows: true, notifGroups: true, followApproval: false, autoDownload: true } }
+    } catch { return { notifMessages: true, notifStories: true, notifFollows: true, notifGroups: true, followApproval: false, autoDownload: true } }
   })
   const [selects, setSelects] = useState(() => {
     try {
@@ -82,14 +81,6 @@ export default function SettingsPage() {
     } catch { return { lastSeen: 'Everyone', disappearing: 'Off' } }
   })
 
-  // Apply dark/light mode on mount
-  useEffect(() => {
-    if (toggles.darkMode) {
-      document.documentElement.classList.remove('light-mode')
-    } else {
-      document.documentElement.classList.add('light-mode')
-    }
-  }, [toggles.darkMode])
 
   const handleToggle = async (key) => {
     const newVal = !toggles[key]
@@ -97,14 +88,6 @@ export default function SettingsPage() {
     setToggles(updated)
     localStorage.setItem('dz_settings_toggles', JSON.stringify(updated))
 
-    // Dark mode toggle — apply/remove class immediately
-    if (key === 'darkMode') {
-      if (newVal) {
-        document.documentElement.classList.remove('light-mode')
-      } else {
-        document.documentElement.classList.add('light-mode')
-      }
-    }
 
     // If enabling message notifications, request permission
     if (key === 'notifMessages' && newVal) {

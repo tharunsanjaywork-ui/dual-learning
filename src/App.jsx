@@ -54,7 +54,7 @@ function ProtectedRoute({ children, requiredMode }) {
 }
 
 export default function App() {
-  const { loading, user, userProfile } = useAuth()
+  const { loading, user, userProfile, mode } = useAuth()
   const [activeCall, setActiveCall] = useState(null)
   const [incomingCall, setIncomingCall] = useState(null)
 
@@ -74,6 +74,7 @@ export default function App() {
   // ═══ GLOBAL INCOMING CALL LISTENER ═══
   useEffect(() => {
     if (!userProfile?.id) return
+    if (mode !== 'messenger') return
     const q = query(
       collection(db, 'calls'),
       where('calleeId', '==', userProfile.id),
@@ -93,7 +94,7 @@ export default function App() {
       }
     })
     return unsub
-  }, [userProfile?.id, activeCall])
+  }, [userProfile?.id, activeCall, mode])
 
   // ═══ GLOBAL OUTGOING CALL LISTENER ═══
   useEffect(() => {
@@ -124,8 +125,8 @@ export default function App() {
     <NotificationBanner />
     <InstallPWA />
 
-    {/* Global call overlays — persists across ALL routes */}
-    {activeCall && (
+    {/* Global call overlays — messenger mode only */}
+    {mode === 'messenger' && activeCall && (
       <CallScreen
         callId={activeCall.callId}
         otherUser={activeCall.callerUser}
@@ -134,7 +135,7 @@ export default function App() {
         onEnd={() => setActiveCall(null)}
       />
     )}
-    {incomingCall && !activeCall && (
+    {mode === 'messenger' && incomingCall && !activeCall && (
       <IncomingCall
         callId={incomingCall.callId}
         callerId={incomingCall.callerId}

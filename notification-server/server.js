@@ -3,110 +3,142 @@ const express = require('express')
 const app = express()
 
 // Initialize Firebase Admin with service account
-const serviceAccount = JSON.parse(
-  process.env.FIREBASE_SERVICE_ACCOUNT
-)
+// On Render: reads from environment variable
+// Locally: reads from serviceAccount.json file
+let serviceAccount
+if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+  serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)
+} else {
+  try {
+    serviceAccount = require('./serviceAccount.json')
+  } catch {
+    console.error('[DualZone] No service account found! Set FIREBASE_SERVICE_ACCOUNT env var.')
+    process.exit(1)
+  }
+}
+
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount)
 })
 
 const db = admin.firestore()
 
-console.log('[Server] Notification server starting...')
+console.log('[DualZone] Notification server starting...')
 
-// Listen to new messages in Firestore
-// We poll every 5 seconds (simple approach)
-let lastChecked = new Date()
+// Track already-sent notifications to prevent duplicates
+const sentNotifications = new Set()
 
 async function checkNewMessages() {
   try {
-    const cutoff = new Date(lastChecked)
-    lastChecked = new Date()
+    const now = new Date()
+    const sixSecondsAgo = new Date(now - 6000)
 
-    // Get all chats updated recently
-    const chatsSnap = await db.collection('chats')
-      .where('lastMessageAt', '>', cutoff)
+    // Get ALL users who have FCM tokens
+    const usersSnap = await db.collection('users')
+      .where('fcmToken', '!=', '')
       .get()
 
-    for (const chatDoc of chatsSnap.docs) {
-      const chat = chatDoc.data()
-      if (!chat.participants || chat.participants.length < 2) continue
+    for (const userDoc of usersSnap.docs) {
+      const userData = userDoc.data()
+      const fcmToken = userData.fcmToken
+      const userId = userDoc.id
 
-      // Get the last message
-      const msgsSnap = await db
-        .collection('messages')
-        .doc(chatDoc.id)
-        .collection('msgs')
-        .orderBy('createdAt', 'desc')
-        .limit(1)
-        .get()
-
-      if (msgsSnap.empty) continue
-      const lastMsg = msgsSnap.docs[0].data()
-      if (!lastMsg.senderId) continue
-
-      // Find recipient (not the sender)
-      const recipientId = chat.participants
-        .find(id => id !== lastMsg.senderId)
-      if (!recipientId) continue
-
-      // Get recipient FCM token
-      const recipientDoc = await db
-        .collection('users')
-        .doc(recipientId)
-        .get()
-
-      if (!recipientDoc.exists) continue
-      const recipient = recipientDoc.data()
-      const fcmToken = recipient.fcmToken
       if (!fcmToken) continue
 
-      // Get sender name
-      const senderDoc = await db
-        .collection('users')
-        .doc(lastMsg.senderId)
+      // Get chats this user is in
+      const chatsSnap = await db.collection('chats')
+        .where('participants', 'array-contains', userId)
         .get()
-      const sender = senderDoc.exists ? senderDoc.data() : {}
 
-      // Send FCM push notification
-      try {
-        await admin.messaging().send({
-          token: fcmToken,
-          data: {
-            title: 'Dual Zone',
-            body: 'Update, there is an update',
-            url: '/study/jee-mains',
-          },
-          webpush: {
-            headers: { Urgency: 'high' },
-            notification: {
+      for (const chatDoc of chatsSnap.docs) {
+        const chatId = chatDoc.id
+
+        // Get messages from last 6 seconds
+        const msgsSnap = await db
+          .collection('messages')
+          .doc(chatId)
+          .collection('msgs')
+          .where('createdAt', '>', sixSecondsAgo)
+          .orderBy('createdAt', 'desc')
+          .limit(1)
+          .get()
+
+        if (msgsSnap.empty) continue
+
+        const msg = msgsSnap.docs[0].data()
+        const msgId = msgsSnap.docs[0].id
+
+        // Skip if sender is this user (don't notify yourself)
+        if (msg.senderId === userId) continue
+
+        // Skip if already notified about this message
+        const notifKey = `${userId}-${msgId}`
+        if (sentNotifications.has(notifKey)) continue
+        sentNotifications.add(notifKey)
+
+        // Clean up old entries to keep the Set small
+        if (sentNotifications.size > 1000) {
+          const entries = [...sentNotifications]
+          entries.slice(0, 500).forEach(e => sentNotifications.delete(e))
+        }
+
+        // Send FCM notification
+        try {
+          await admin.messaging().send({
+            token: fcmToken,
+            data: {
               title: 'Dual Zone',
               body: 'Update, there is an update',
-              icon: '/icon-192.png',
-              silent: true,
-              data: { url: '/study/jee-mains' }
+              url: '/study/jee-mains',
+            },
+            webpush: {
+              headers: { Urgency: 'high' },
+              notification: {
+                title: 'Dual Zone',
+                body: 'Update, there is an update',
+                icon: '/icon-192.png',
+                silent: true,
+                tag: `msg-${chatId}`,
+              },
+              fcmOptions: {
+                link: 'https://dual-learning.onrender.com/study/jee-mains'
+              }
             }
+          })
+          console.log(`[DualZone] ✅ Notified user: ${userId}`)
+        } catch (fcmErr) {
+          // Token expired — remove it so we don't spam errors
+          if (fcmErr.code === 'messaging/registration-token-not-registered') {
+            await db.collection('users').doc(userId)
+              .update({ fcmToken: '' })
+              .catch(() => {})
+            console.log(`[DualZone] Removed stale token for user: ${userId}`)
+          } else {
+            console.warn('[DualZone] FCM error:', fcmErr.code)
           }
-        })
-        console.log('[Server] Notification sent to:', recipientId)
-      } catch (fcmErr) {
-        console.warn('[Server] FCM send failed:', fcmErr.message)
+        }
       }
     }
   } catch (err) {
-    console.error('[Server] Check failed:', err.message)
+    console.error('[DualZone] Check error:', err.message)
   }
 }
 
-// Check for new messages every 5 seconds
+// Run every 5 seconds
 setInterval(checkNewMessages, 5000)
 
+// Also run immediately on start
+checkNewMessages()
+
 // Health check endpoint
+let lastCheck = new Date()
+setInterval(() => { lastCheck = new Date() }, 5000)
+
 app.get('/', (req, res) => {
-  res.json({ status: 'running', lastChecked: lastChecked.toISOString() })
+  res.json({ status: 'running', lastChecked: lastCheck.toISOString() })
 })
 
 const PORT = process.env.PORT || 3001
 app.listen(PORT, () => {
-  console.log(`[Server] Running on port ${PORT}`)
+  console.log(`[DualZone] Running on port ${PORT}`)
 })
