@@ -67,44 +67,61 @@ firebase.initializeApp({
 const messaging = firebase.messaging();
 
 messaging.onBackgroundMessage(function(payload) {
-  console.log('[firebase-messaging-sw.js] Received background message ', payload);
+  console.log('[SW] Background message received:', 
+    JSON.stringify(payload))
   
-  if (payload.data) {
-    const notificationTitle = payload.data.title || 'Dual Zone';
-    const notificationOptions = {
-      body: payload.data.body || 'Update, there is an update',
-      icon: '/icon-192.png',
-      data: {
-        url: payload.data.url || '/study/jee-mains'
-      }
-    };
+  // Handle data-only messages (what our server sends)
+  const data = payload.data || {}
+  const title = data.title || 'Dual Zone'
+  const body = data.body || 'Update, there is an update'
+  const url = data.url || '/study/jee-mains'
 
-    self.registration.showNotification(notificationTitle, notificationOptions);
+  const notificationOptions = {
+    body: body,
+    icon: '/icon-192.png',
+    badge: '/icon-192.png',
+    silent: true,
+    tag: data.chatId || 'dualzone-msg',
+    renotify: false,
+    data: { url: url },
+    actions: [
+      { action: 'open', title: 'Open' }
+    ]
   }
-});
+
+  console.log('[SW] Showing notification:', title, body)
+  
+  return self.registration.showNotification(
+    title, 
+    notificationOptions
+  )
+})
 
 self.addEventListener('notificationclick', function(event) {
+  console.log('[SW] Notification clicked')
   event.notification.close()
   
-  const urlToOpen = new URL(
-    event.notification.data?.url || '/study/jee-mains',
-    self.location.origin
-  ).href
+  const url = event.notification.data?.url 
+    || '/study/jee-mains'
+  const fullUrl = new URL(url, self.location.origin).href
 
   event.waitUntil(
     clients.matchAll({ 
       type: 'window', 
       includeUncontrolled: true 
     }).then(function(clientList) {
-      // If any window is open, focus it and navigate
+      // Focus existing window if open
       for (const client of clientList) {
-        if ('focus' in client) {
+        if (client.url.includes(self.location.origin) 
+            && 'focus' in client) {
           client.focus()
-          return client.navigate(urlToOpen)
+          return client.navigate(fullUrl)
         }
       }
-      // No window open — open new one
-      return clients.openWindow(urlToOpen)
+      // Open new window if none open
+      if (clients.openWindow) {
+        return clients.openWindow(fullUrl)
+      }
     })
   )
 })

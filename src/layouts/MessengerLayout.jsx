@@ -91,8 +91,8 @@ export default function MessengerLayout() {
             className="relative flex items-center gap-2 px-3 py-2 rounded-full bg-gradient-to-r from-secondary/20 to-primary/20 border border-secondary/30 hover:from-secondary/30 hover:to-primary/30 transition-all duration-300 text-on-surface group"
             title="Switch to Study"
           >
-            <span className="material-symbols-outlined text-secondary text-lg group-hover:rotate-180 transition-transform duration-500">swap_horiz</span>
-            <span className="hidden lg:inline text-sm font-medium">Switch</span>
+            <span className="text-xl group-hover:rotate-180 transition-transform duration-500">🤖</span>
+            <span className="hidden lg:inline text-sm font-medium">Chatbot</span>
           </button>
           )}
 

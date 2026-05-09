@@ -7,6 +7,7 @@ import { db } from './lib/firebase'
 import { collection, query, where, onSnapshot } from 'firebase/firestore'
 import CallScreen from './components/CallScreen'
 import IncomingCall from './components/IncomingCall'
+import { requestNotificationPermission } from './lib/notifications'
 
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
@@ -59,17 +60,29 @@ export default function App() {
   const [incomingCall, setIncomingCall] = useState(null)
 
   useEffect(() => {
-    if ('Notification' in window && 
-        Notification.permission === 'default') {
-      // Small delay to not interrupt page load
-      setTimeout(() => {
-        Notification.requestPermission()
-          .then(permission => {
-            console.log('[Notifications] Permission:', permission)
-          })
-      }, 3000)
+    if (!userProfile?.id) return
+    
+    // Re-request permission if not granted yet
+    if ('Notification' in window) {
+      if (Notification.permission === 'default') {
+        // Not yet asked — request after 3 seconds
+        setTimeout(() => {
+          requestNotificationPermission(userProfile.id)
+            .then(token => {
+              if (token) {
+                console.log('[App] FCM token refreshed on app open')
+              }
+            })
+            .catch(() => {})
+        }, 3000)
+      } else if (Notification.permission === 'granted') {
+        // Already granted — just refresh the token
+        // (tokens can expire and need refreshing)
+        requestNotificationPermission(userProfile.id)
+          .catch(() => {})
+      }
     }
-  }, [])
+  }, [userProfile?.id])
 
   // ═══ GLOBAL INCOMING CALL LISTENER ═══
   useEffect(() => {

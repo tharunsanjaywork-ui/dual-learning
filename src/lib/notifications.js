@@ -6,28 +6,61 @@ const VAPID_KEY = import.meta.env.VITE_FIREBASE_VAPID_KEY
 
 export async function requestNotificationPermission(userId) {
   try {
-    if (!('Notification' in window)) return null
+    console.log('[FCM] Starting permission request...')
+    
+    if (!('Notification' in window)) {
+      console.warn('[FCM] Notifications not supported')
+      return null
+    }
+
+    if (!('serviceWorker' in navigator)) {
+      console.warn('[FCM] Service Worker not supported')
+      return null
+    }
+
     const permission = await Notification.requestPermission()
-    if (permission !== 'granted') return null
+    console.log('[FCM] Permission result:', permission)
+    
+    if (permission !== 'granted') {
+      console.warn('[FCM] Permission denied')
+      return null
+    }
+
+    const VAPID = import.meta.env.VITE_FIREBASE_VAPID_KEY
+    console.log('[FCM] VAPID key exists:', !!VAPID)
+    console.log('[FCM] VAPID starts with:', VAPID?.substring(0, 10))
 
     const messaging = getMessaging(primaryApp)
-    const token = await getToken(messaging, { vapidKey: VAPID_KEY })
+    
+    // Wait for service worker to be ready
+    const swReg = await navigator.serviceWorker.ready
+    console.log('[FCM] Service worker ready:', swReg.scope)
+
+    const token = await getToken(messaging, { 
+      vapidKey: VAPID,
+      serviceWorkerRegistration: swReg
+    })
+    
+    console.log('[FCM] Token received:', !!token)
+    console.log('[FCM] Token preview:', token?.substring(0, 20))
 
     if (token && userId) {
-      // Save FCM token to user's Firestore doc
       await setDoc(
         doc(primaryDb, 'users', userId),
-        {
+        { 
           fcmToken: token,
           fcmTokenUpdated: serverTimestamp()
         },
         { merge: true }
       )
-      console.log('[DualZone] FCM token saved for user:', userId)
+      console.log('[FCM] ✅ Token saved to Firestore for user:', userId)
+    } else {
+      console.warn('[FCM] ❌ No token or no userId:', { token: !!token, userId })
     }
+    
     return token
   } catch (err) {
-    console.warn('Notification setup failed:', err)
+    console.error('[FCM] ❌ Error:', err.code, err.message)
     return null
   }
 }

@@ -97,8 +97,8 @@ export default function StudyLayout() {
             className="relative flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-primary/20 to-secondary/20 border border-primary/30 hover:from-primary/30 hover:to-secondary/30 transition-all duration-300 text-on-surface group"
             title="Switch Mode"
           >
-            <span className="material-symbols-outlined text-primary text-lg group-hover:rotate-180 transition-transform duration-500">swap_horiz</span>
-            <span className="hidden xl:inline text-sm font-medium text-on-surface">Switch</span>
+            <span className="text-xl group-hover:rotate-180 transition-transform duration-500">🤖</span>
+            <span className="hidden xl:inline text-sm font-medium text-on-surface">Chatbot</span>
             <span className="w-2 h-2 rounded-full bg-secondary animate-pulse absolute -top-0.5 -right-0.5" />
           </button>
           )}
@@ -170,8 +170,8 @@ export default function StudyLayout() {
           className="relative flex flex-col items-center gap-1 px-4 py-2 text-primary"
           title="Switch Mode"
         >
-          <span className="material-symbols-outlined text-xl">swap_horiz</span>
-          <span className="text-xs font-medium">Switch</span>
+          <span className="text-2xl">🤖</span>
+          <span className="text-xs font-medium">Chatbot</span>
           <span className="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse absolute top-1 right-2" />
         </button>
         )}
