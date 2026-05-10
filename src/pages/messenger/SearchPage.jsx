@@ -6,8 +6,6 @@ import { useAuth } from '../../context/AuthContext'
 import { useChat } from '../../context/ChatContext'
 import { isUserOnline } from '../../utils/storage'
 
-const FILTERS = ['All Residents', 'Deep Thinkers', 'Designers', 'Night Owls', 'Early Birds']
-
 export default function SearchPage() {
   const navigate = useNavigate()
   const { userProfile, setUserProfile } = useAuth()
@@ -16,7 +14,6 @@ export default function SearchPage() {
   const [results, setResults] = useState([])
   const [allUsers, setAllUsers] = useState([])
   const [loading, setLoading] = useState(true)
-  const [activeFilter, setActiveFilter] = useState('All Residents')
 
   // Load all users on mount for suggested section
   useEffect(() => {
@@ -27,6 +24,7 @@ export default function SearchPage() {
         const users = snapshot.docs
           .map(d => ({ id: d.id, ...d.data() }))
           .filter(u => u.id !== userProfile?.id)
+          .filter(u => u.username && u.username.length <= 25) // Filter out deleted accounts that have auto-generated UID usernames
         setAllUsers(users)
       } catch (err) {
         console.error('Fetch users failed:', err)
@@ -89,8 +87,8 @@ export default function SearchPage() {
     if (chatId) navigate(`/messenger/chat/${chatId}`)
   }
 
-  // Users to display (search results or suggested)
-  const displayUsers = searchQuery.trim() ? results : allUsers.slice(0, 10)
+  // Users to display (search results only)
+  const displayUsers = searchQuery.trim() ? results : []
 
   const renderUserCard = (user) => {
     const isFollowing = userProfile?.following?.includes(user.id)
@@ -169,32 +167,7 @@ export default function SearchPage() {
         </div>
       </div>
 
-      {/* Filter Pills */}
-      <div className="flex gap-2 overflow-x-auto hide-scrollbar mb-5 pb-1">
-        {FILTERS.map(f => (
-          <button
-            key={f}
-            onClick={() => setActiveFilter(f)}
-            className={`px-4 py-2 rounded-full text-xs font-medium whitespace-nowrap transition-all ${
-              activeFilter === f ? 'bg-secondary text-on-secondary shadow-md shadow-secondary/20' : 'bg-surface-container-highest text-on-surface-variant hover:bg-surface-bright'
-            }`}
-          >
-            {f}
-          </button>
-        ))}
-      </div>
-
-      {/* Section Title */}
-      {!searchQuery.trim() && !loading && allUsers.length > 0 && (
-        <div className="flex items-center gap-2 mb-4">
-          <span className="material-symbols-outlined text-secondary text-lg">group</span>
-          <h2 className="text-on-surface font-headline font-bold text-base">Suggested People</h2>
-          <div className="flex-1 h-px bg-outline-variant/20" />
-          <span className="text-on-surface-variant text-xs">{allUsers.length} people</span>
-        </div>
-      )}
-
-      {/* Results / Suggestions */}
+      {/* Results */}
       {loading ? (
         <div className="space-y-3">
           {[1, 2, 3, 4].map(i => (
