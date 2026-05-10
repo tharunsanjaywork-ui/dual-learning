@@ -226,29 +226,43 @@ export function AuthProvider({ children }) {
   // Login with dual-password check
   const login = async (username, password) => {
     // Rate limiting removed based on user request
-    const now = Date.now()
-
     const email = `${username}@dualzone.app`
     const secretEmail = `${username}_secret@dualzone.app`
-
-    // First, find user by username to get their data
-    const usernameQuery = query(collection(db, 'users'), where('username', '==', username))
-    const snapshot = await getDocs(usernameQuery)
-
-    if (snapshot.empty) {
-      throw new Error('User not found. Please register first.')
-    }
-
-    const userDoc = snapshot.docs[0]
-    const userData = userDoc.data()
-    const firestoreId = userDoc.id
 
     // Prevent onAuthStateChanged from interfering during login
     isLoggingIn.current = true
 
-    // Try study password first (Firebase Auth)
+    let cred
+    let mode
+
     try {
-      const cred = await signInWithEmailAndPassword(auth, email, password)
+      // Try study password first
+      cred = await signInWithEmailAndPassword(auth, email, password)
+      mode = 'study'
+    } catch (studyErr) {
+      // Study failed, try messenger password
+      try {
+        cred = await signInWithEmailAndPassword(auth, secretEmail, password)
+        mode = 'messenger'
+      } catch (messengerErr) {
+        isLoggingIn.current = false
+        throw new Error('Incorrect username or password')
+      }
+    }
+
+    try {
+      // Now authenticated, find user by username to get their data
+      const usernameQuery = query(collection(db, 'users'), where('username', '==', username))
+      const snapshot = await getDocs(usernameQuery)
+
+      if (snapshot.empty) {
+        throw new Error('User profile not found in database')
+      }
+
+      const userDoc = snapshot.docs[0]
+      const userData = userDoc.data()
+      const firestoreId = userDoc.id
+
       const profile = { id: firestoreId, ...userData }
       setUserProfile(profile)
       setUser(cred.user)
@@ -263,59 +277,21 @@ export function AuthProvider({ children }) {
 
       const token = await cred.user.getIdToken()
       sessionStorage.setItem('dz_token', token)
-      sessionStorage.setItem('dz_mode', 'study')
-      localStorage.setItem('dz_mode', 'study')
+      sessionStorage.setItem('dz_mode', mode)
+      localStorage.setItem('dz_mode', mode)
 
-      setMode('study')
+      setMode(mode)
 
       // Request notification permission and save FCM token
       requestNotificationPermission(firestoreId).catch(() => {})
 
-      // Reset rate limit counter on success
-      sessionStorage.setItem('dz_login_attempts', '0')
-
+      return { mode }
+    } catch (err) {
+      isLoggingIn.current = false
+      throw err
+    } finally {
       // Allow onAuthStateChanged to work again after a delay
       setTimeout(() => { isLoggingIn.current = false }, 2000)
-
-      return { mode: 'study' }
-    } catch {
-      // Study password failed, try messenger password (Firebase Auth with secret email)
-      try {
-        const cred = await signInWithEmailAndPassword(auth, secretEmail, password)
-        const profile = { id: firestoreId, ...userData }
-        setUserProfile(profile)
-        setUser(cred.user)
-        setLoading(false)
-
-        await setDoc(doc(db, 'users', firestoreId), { isOnline: true, lastSeen: serverTimestamp() }, { merge: true })
-
-        storage.setUsername(username)
-        storage.setDisplayName(userData.displayName)
-        storage.setProfilePic(userData.profilePic || '')
-        storage.setUserId(firestoreId)
-
-        const token = await cred.user.getIdToken()
-        sessionStorage.setItem('dz_token', token)
-        sessionStorage.setItem('dz_mode', 'messenger')
-        localStorage.setItem('dz_mode', 'messenger')
-
-        setMode('messenger')
-
-        // Request notification permission and save FCM token
-        requestNotificationPermission(firestoreId).catch(() => {})
-
-        // Reset rate limit counter on success
-        sessionStorage.setItem('dz_login_attempts', '0')
-
-        // Allow onAuthStateChanged to work again after a delay
-        setTimeout(() => { isLoggingIn.current = false }, 2000)
-
-        return { mode: 'messenger' }
-      } catch {
-        isLoggingIn.current = false
-        // Both failed - don't reveal which password is which
-        throw new Error('Incorrect password, try again')
-      }
     }
   }
 
