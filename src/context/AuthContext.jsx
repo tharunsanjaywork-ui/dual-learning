@@ -147,23 +147,26 @@ export function AuthProvider({ children }) {
 
   // Register new user
   const register = async ({ username, studyPassword, messengerPassword, displayName, profilePic, bio, interests }) => {
-    // Check if username is taken
-    const usernameQuery = query(collection(db, 'users'), where('username', '==', username))
-    const existing = await getDocs(usernameQuery)
-    if (!existing.empty) {
-      throw new Error('Username already taken')
-    }
+    isLoggingIn.current = true
+    try {
+      const email = `${username}@dualzone.app`
+      const secretEmail = `${username}_secret@dualzone.app`
 
-    const email = `${username}@dualzone.app`
-    const secretEmail = `${username}_secret@dualzone.app`
+      // Hash both passwords with bcrypt (for in-app verification like switch modal)
+      const studyHash = await bcrypt.hash(studyPassword, 12)
+      const messengerHash = await bcrypt.hash(messengerPassword, 12)
 
-    // Hash both passwords with bcrypt (for in-app verification like switch modal)
-    const studyHash = await bcrypt.hash(studyPassword, 12)
-    const messengerHash = await bcrypt.hash(messengerPassword, 12)
-
-    // Create Firebase Auth account #1 with study password
-    const studyCred = await createUserWithEmailAndPassword(auth, email, studyPassword)
-    const studyUid = studyCred.user.uid
+      // Create Firebase Auth account #1 with study password
+      let studyCred
+      try {
+        studyCred = await createUserWithEmailAndPassword(auth, email, studyPassword)
+      } catch (err) {
+        if (err.code === 'auth/email-already-in-use') {
+          throw new Error('Username already taken')
+        }
+        throw err
+      }
+      const studyUid = studyCred.user.uid
 
     // Sign out so we can create the second account
     await signOut(auth)
@@ -214,6 +217,10 @@ export function AuthProvider({ children }) {
     storage.setUserId(studyUid)
 
     return true
+    } finally {
+      // Allow onAuthStateChanged to work again after a delay
+      setTimeout(() => { isLoggingIn.current = false }, 2000)
+    }
   }
 
   // Login with dual-password check
