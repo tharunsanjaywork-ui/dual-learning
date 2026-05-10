@@ -172,9 +172,6 @@ export function AuthProvider({ children }) {
     const messengerCred = await createUserWithEmailAndPassword(auth, secretEmail, messengerPassword)
     const messengerUid = messengerCred.user.uid
 
-    // Sign out the messenger account
-    await signOut(auth)
-
     // Use the study UID as the primary Firestore document key
     await setDoc(doc(db, 'users', studyUid), {
       username,
@@ -207,6 +204,9 @@ export function AuthProvider({ children }) {
       todayMinutes: 0,
     })
 
+    // Sign out the messenger account after documents are created
+    await signOut(auth)
+
     // Save to localStorage
     storage.setUsername(username)
     storage.setDisplayName(displayName)
@@ -218,22 +218,8 @@ export function AuthProvider({ children }) {
 
   // Login with dual-password check
   const login = async (username, password) => {
-    // ═══ RATE LIMITING ═══
-    const loginAttempts = parseInt(sessionStorage.getItem('dz_login_attempts') || '0')
-    const lastAttempt = parseInt(sessionStorage.getItem('dz_last_attempt') || '0')
+    // Rate limiting removed based on user request
     const now = Date.now()
-
-    // Reset counter after 15 minutes
-    if (now - lastAttempt > 15 * 60 * 1000) {
-      sessionStorage.setItem('dz_login_attempts', '0')
-    } else if (loginAttempts >= 5) {
-      const waitMins = Math.ceil((15 * 60 * 1000 - (now - lastAttempt)) / 60000)
-      throw new Error(`Too many attempts. Wait ${waitMins} minutes.`)
-    }
-
-    // Increment attempts
-    sessionStorage.setItem('dz_login_attempts', String(loginAttempts + 1))
-    sessionStorage.setItem('dz_last_attempt', String(now))
 
     const email = `${username}@dualzone.app`
     const secretEmail = `${username}_secret@dualzone.app`
