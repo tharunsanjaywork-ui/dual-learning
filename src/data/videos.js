@@ -112,4 +112,17 @@ const neetVideos = [
   }
 ]
 
+export const getVideosBySubject = (subject) => {
+  switch (subject) {
+    case 'jee-mains': return jeeMainsVideos
+    case 'jee-advanced': return jeeAdvancedVideos
+    case 'neet': return neetVideos
+    default: return []
+  }
+}
+
+export const getAllVideos = () => [...jeeMainsVideos, ...jeeAdvancedVideos, ...neetVideos]
+
+export const getThumbnail = (videoId) => `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`
+
 export { jeeMainsVideos, jeeAdvancedVideos, neetVideos }
