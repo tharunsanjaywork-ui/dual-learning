@@ -2,17 +2,21 @@ const admin = require('firebase-admin')
 const express = require('express')
 const app = express()
 
-// Initialize Firebase Admin with service account
-// On Render: reads from environment variable
-// Locally: reads from serviceAccount.json file
+// Initialize Firebase Admin
 let serviceAccount
 if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-  serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)
+  try {
+    serviceAccount = JSON.parse(
+      process.env.FIREBASE_SERVICE_ACCOUNT)
+  } catch (e) {
+    console.error('[DualZone] Failed to parse service account:', e.message)
+    process.exit(1)
+  }
 } else {
   try {
     serviceAccount = require('./serviceAccount.json')
   } catch {
-    console.error('[DualZone] No service account found! Set FIREBASE_SERVICE_ACCOUNT env var.')
+    console.error('[DualZone] No service account found!')
     process.exit(1)
   }
 }
@@ -22,37 +26,68 @@ admin.initializeApp({
 })
 
 const db = admin.firestore()
+console.log('[DualZone] ✅ Server started successfully!')
 
-console.log('[DualZone] Notification server starting...')
-
+// Track sent notifications to avoid duplicates
 const sentNotifications = new Set()
-let lastCheckTime = new Date(Date.now() - 10000)
+
+// Use Firestore timestamp as reference instead of 
+// local time — this survives server restarts!
+async function getLastCheckTime() {
+  try {
+    const ref = db.collection('system').doc('notifServer')
+    const snap = await ref.get()
+    if (snap.exists && snap.data().lastCheck) {
+      const lastCheck = snap.data().lastCheck.toDate()
+      console.log('[DualZone] Resuming from:', lastCheck.toISOString())
+      return lastCheck
+    }
+  } catch (e) {
+    console.warn('[DualZone] Could not read lastCheck:', e.message)
+  }
+  // Default: check messages from last 30 seconds on first run
+  return new Date(Date.now() - 30000)
+}
+
+async function saveLastCheckTime(time) {
+  try {
+    await db.collection('system').doc('notifServer').set({
+      lastCheck: admin.firestore.Timestamp.fromDate(time),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    }, { merge: true })
+  } catch (e) {
+    // Non-critical, ignore
+  }
+}
+
+let lastCheckTime = new Date(Date.now() - 30000)
+
+// Initialize lastCheckTime from Firestore on startup
+getLastCheckTime().then(t => { lastCheckTime = t })
 
 async function checkNewMessages() {
   const checkStart = new Date()
-  
+
   try {
-    // Get ALL users who have FCM tokens
+    // Get all users with FCM tokens
     const usersSnap = await db.collection('users')
       .where('fcmToken', '!=', '')
       .get()
 
-    if (usersSnap.empty) {
-      console.log('[DualZone] No users with FCM tokens found')
-      lastCheckTime = checkStart
-      return
-    }
+    if (usersSnap.empty) return
 
-    console.log(`[DualZone] Checking ${usersSnap.size} users...`)
+    console.log(`[DualZone] Checking ${usersSnap.size} users at ${checkStart.toISOString()}`)
+
+    let notificationsSent = 0
 
     for (const userDoc of usersSnap.docs) {
       const userData = userDoc.data()
       const fcmToken = userData.fcmToken
       const userId = userDoc.id
 
-      if (!fcmToken || fcmToken === '') continue
+      if (!fcmToken || fcmToken.trim() === '') continue
 
-      // Get chats this user is in
+      // Get chats for this user
       const chatsSnap = await db.collection('chats')
         .where('participants', 'array-contains', userId)
         .get()
@@ -62,14 +97,14 @@ async function checkNewMessages() {
       for (const chatDoc of chatsSnap.docs) {
         const chatId = chatDoc.id
 
-        // SIMPLE QUERY — no composite index needed
-        // Just get last 3 messages and filter in code
+        // Get recent messages — simple orderBy only
+        // No composite index needed this way
         const msgsSnap = await db
           .collection('messages')
           .doc(chatId)
           .collection('msgs')
           .orderBy('createdAt', 'desc')
-          .limit(3)
+          .limit(5)
           .get()
 
         if (msgsSnap.empty) continue
@@ -78,89 +113,137 @@ async function checkNewMessages() {
           const msg = msgDoc.data()
           const msgId = msgDoc.id
 
-          // Check if message is recent (last 10 seconds)
-          const msgTime = msg.createdAt?.toDate 
-            ? msg.createdAt.toDate() 
-            : new Date(msg.createdAt || 0)
-          
-          const isRecent = msgTime > lastCheckTime
-          if (!isRecent) continue
+          // Convert Firestore timestamp to Date
+          let msgTime
+          if (msg.createdAt?.toDate) {
+            msgTime = msg.createdAt.toDate()
+          } else if (msg.createdAt?._seconds) {
+            msgTime = new Date(msg.createdAt._seconds * 1000)
+          } else {
+            continue // Skip if no valid timestamp
+          }
 
-          // Skip if sender is the recipient
+          // Only process messages newer than last check
+          if (msgTime <= lastCheckTime) continue
+
+          // Skip messages sent by this user
           if (msg.senderId === userId) continue
 
-          // Skip if already notified
+          // Skip already notified
           const notifKey = `${userId}-${msgId}`
           if (sentNotifications.has(notifKey)) continue
           sentNotifications.add(notifKey)
 
-          // Keep set small
-          if (sentNotifications.size > 1000) {
+          // Keep set from growing too large
+          if (sentNotifications.size > 2000) {
             const arr = [...sentNotifications]
-            arr.slice(0, 500).forEach(k => 
+            arr.slice(0, 1000).forEach(k => 
               sentNotifications.delete(k))
           }
 
-          console.log(`[DualZone] Sending notification to ${userId}`)
+          console.log(`[DualZone] 📨 New message found! Sending to ${userId}`)
 
-          // Send FCM — use data-only (not notification)
-          // This way onBackgroundMessage handles it
+          // Send FCM notification
           try {
-            await admin.messaging().send({
+            const response = await admin.messaging().send({
               token: fcmToken,
-              // Use data field ONLY (not notification field)
-              // This ensures onBackgroundMessage in SW handles it
+              // data-only message — service worker handles display
               data: {
                 title: 'Dual Zone',
                 body: 'Update, there is an update',
                 url: '/study/jee-mains',
                 chatId: chatId,
+                msgId: msgId,
               },
               webpush: {
-                headers: { 
+                headers: {
                   Urgency: 'high',
-                  TTL: '60'
+                  TTL: '300'
                 },
                 fcmOptions: {
                   link: 'https://dual-learning.onrender.com/study/jee-mains'
                 }
+              },
+              android: {
+                priority: 'high'
+              },
+              apns: {
+                headers: {
+                  'apns-priority': '10'
+                }
               }
             })
-            console.log(`[DualZone] ✅ Notified: ${userId}`)
+            
+            console.log(`[DualZone] ✅ Notification sent! User: ${userId}, Response: ${response}`)
+            notificationsSent++
+            
           } catch (fcmErr) {
             if (fcmErr.code === 
                 'messaging/registration-token-not-registered') {
+              // Token expired — remove it
               await db.collection('users').doc(userId)
-                .update({ fcmToken: '' }).catch(() => {})
-              console.log(`[DualZone] Removed stale token: ${userId}`)
+                .update({ fcmToken: '' })
+                .catch(() => {})
+              console.log(`[DualZone] 🗑️ Removed expired token for: ${userId}`)
+            } else if (fcmErr.code === 
+                'messaging/invalid-registration-token') {
+              await db.collection('users').doc(userId)
+                .update({ fcmToken: '' })
+                .catch(() => {})
+              console.log(`[DualZone] 🗑️ Removed invalid token for: ${userId}`)
             } else {
               console.warn('[DualZone] FCM error:', 
-                fcmErr.code, fcmErr.message)
+                fcmErr.code, '-', fcmErr.message)
             }
           }
         }
       }
     }
+
+    if (notificationsSent > 0) {
+      console.log(`[DualZone] 📊 Sent ${notificationsSent} notifications this cycle`)
+    }
+
   } catch (err) {
-    console.error('[DualZone] ❌ Check error:', err.message)
+    console.error('[DualZone] ❌ Error:', err.message)
+    if (err.code) console.error('[DualZone] Error code:', err.code)
   }
-  
+
+  // Save checkStart (not now) as lastCheckTime
+  // This ensures we don't miss messages if check takes time
   lastCheckTime = checkStart
+  await saveLastCheckTime(checkStart)
 }
 
 // Run immediately then every 5 seconds
 checkNewMessages()
 setInterval(checkNewMessages, 5000)
 
-// Health check endpoint
-let lastCheck = new Date()
-setInterval(() => { lastCheck = new Date() }, 5000)
+// Keep-alive ping to prevent Render free tier sleeping
+// Pings itself every 10 minutes
+const SERVER_URL = process.env.RENDER_EXTERNAL_URL || 
+  'https://dualzone-notifications-1-78jy.onrender.com'
 
+setInterval(() => {
+  const http = require('https')
+  http.get(SERVER_URL, (res) => {
+    console.log('[DualZone] 💓 Keep-alive ping OK:', res.statusCode)
+  }).on('error', (e) => {
+    console.warn('[DualZone] Keep-alive ping failed:', e.message)
+  })
+}, 10 * 60 * 1000) // every 10 minutes
+
+// Health check endpoint
 app.get('/', (req, res) => {
-  res.json({ status: 'running', lastChecked: lastCheck.toISOString() })
+  res.json({
+    status: 'running',
+    lastChecked: lastCheckTime.toISOString(),
+    notifCacheSize: sentNotifications.size,
+    uptime: process.uptime()
+  })
 })
 
 const PORT = process.env.PORT || 3001
 app.listen(PORT, () => {
-  console.log(`[DualZone] Running on port ${PORT}`)
+  console.log(`[DualZone] 🚀 Server running on port ${PORT}`)
 })

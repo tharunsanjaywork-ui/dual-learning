@@ -1,36 +1,115 @@
-export const jeeMainsVideos = [
-  { id: "pFhkRkABU48", title: "JEE Main 2025 Complete Physics One Shot", channel: "JEE Wallah", duration: "6:32:10", views: "3.2M views", subject: "Physics" },
-  { id: "HyF5NRwPBg4", title: "JEE Main Mathematics Complete Revision", channel: "Vedantu JEE", duration: "5:45:00", views: "1.8M views", subject: "Mathematics" },
-  { id: "4OEPPaUxFUk", title: "JEE Mains Chemistry One Shot", channel: "Apni Kaksha", duration: "4:20:30", views: "2.1M views", subject: "Chemistry" },
-  { id: "AHgJBsRcJRk", title: "JEE Main 2025 Paper Discussion", channel: "Unacademy JEE", duration: "3:10:00", views: "980K views", subject: "General" },
-  { id: "ZED8_uerbb4", title: "JEE Mains Strategy Score 250+", channel: "Physics Wallah", duration: "1:45:20", views: "4.5M views", subject: "Strategy" },
-]
-
-export const jeeAdvancedVideos = [
-  { id: "_AzThFO0Bj8", title: "JEE Advanced Physics Complete One Shot", channel: "JEE Wallah", duration: "7:10:00", views: "1.5M views", subject: "Physics" },
-  { id: "XHVEoSXP61k", title: "JEE Advanced Maths Calculus Deep Dive", channel: "Mohit Tyagi", duration: "5:30:00", views: "890K views", subject: "Mathematics" },
-  { id: "fSkPKR54eHQ", title: "JEE Advanced Chemistry Organic Reactions", channel: "Vedantu JEE", duration: "4:55:00", views: "720K views", subject: "Chemistry" },
-  { id: "K6Z9qEPEwos", title: "IIT JEE Advanced Paper Analysis", channel: "Unacademy JEE", duration: "3:40:00", views: "1.1M views", subject: "General" },
-  { id: "iw4gdW7unhM", title: "JEE Advanced Topper Strategy", channel: "Physics Wallah", duration: "2:00:00", views: "2.3M views", subject: "Strategy" },
-]
-
-export const neetVideos = [
-  { id: "nYFuxTozgLI", title: "NEET 2025 Biology Complete One Shot", channel: "Physics Wallah NEET", duration: "8:15:00", views: "5.2M views", subject: "Biology" },
-  { id: "pqKzx3x9f34", title: "NEET Chemistry All Chapters Revision", channel: "Vedantu NEET", duration: "6:00:00", views: "2.8M views", subject: "Chemistry" },
-  { id: "Mw6APxBVZLY", title: "NEET Physics Complete Revision", channel: "Let's Crack NEET UG", duration: "4:30:00", views: "1.6M views", subject: "Physics" },
-  { id: "e6TSZJ4XKGU", title: "NEET 2025 Score 700+ Roadmap", channel: "Unacademy NEET", duration: "2:10:00", views: "3.9M views", subject: "Strategy" },
-  { id: "HVsd4LIqgLQ", title: "NEET Biology Human Physiology", channel: "Biomentors", duration: "5:50:00", views: "1.2M views", subject: "Biology" },
-]
-
-export const getVideosBySubject = (subject) => {
-  switch (subject) {
-    case 'jee-mains': return jeeMainsVideos
-    case 'jee-advanced': return jeeAdvancedVideos
-    case 'neet': return neetVideos
-    default: return []
+const jeeMainsVideos = [
+  {
+    id: "v3b2BdTPFv8",
+    title: "JEE Main 2025 Complete Physics Revision",
+    channel: "Physics Wallah",
+    duration: "5:42:00",
+    views: "8.2M views"
+  },
+  {
+    id: "bFqtPuaFTto",
+    title: "JEE Main Mathematics One Shot",
+    channel: "Vedantu JEE",
+    duration: "6:10:00",
+    views: "3.4M views"
+  },
+  {
+    id: "s_4If4MGCOE",
+    title: "JEE Mains Chemistry Complete Revision",
+    channel: "Physics Wallah",
+    duration: "4:55:00",
+    views: "5.1M views"
+  },
+  {
+    id: "GFZhAF4r8rE",
+    title: "JEE Main 2025 Strategy and Tips",
+    channel: "Unacademy JEE",
+    duration: "1:30:00",
+    views: "2.3M views"
+  },
+  {
+    id: "FJkuRMxZWO4",
+    title: "JEE Mains Score 250+ Complete Guide",
+    channel: "JEE Wallah",
+    duration: "2:15:00",
+    views: "4.7M views"
   }
-}
+]
 
-export const getAllVideos = () => [...jeeMainsVideos, ...jeeAdvancedVideos, ...neetVideos]
+const jeeAdvancedVideos = [
+  {
+    id: "9fRPXUTbKZE",
+    title: "JEE Advanced Physics Mechanics One Shot",
+    channel: "Physics Wallah",
+    duration: "8:20:00",
+    views: "2.1M views"
+  },
+  {
+    id: "XFbycHBDCiI",
+    title: "JEE Advanced Mathematics Calculus",
+    channel: "Mohit Tyagi",
+    duration: "5:45:00",
+    views: "1.8M views"
+  },
+  {
+    id: "yMlX8rlCaa0",
+    title: "JEE Advanced Chemistry Organic",
+    channel: "Vedantu JEE",
+    duration: "6:30:00",
+    views: "1.5M views"
+  },
+  {
+    id: "7RbDANKDkB4",
+    title: "IIT JEE Advanced Complete Strategy",
+    channel: "Unacademy JEE",
+    duration: "2:00:00",
+    views: "3.2M views"
+  },
+  {
+    id: "iOhjoNoxFmI",
+    title: "JEE Advanced Topper Tips Rank Under 100",
+    channel: "Physics Wallah",
+    duration: "1:45:00",
+    views: "4.5M views"
+  }
+]
 
-export const getThumbnail = (videoId) => `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`
+const neetVideos = [
+  {
+    id: "v6GNjqECsJ4",
+    title: "NEET 2025 Biology Complete One Shot",
+    channel: "Physics Wallah NEET",
+    duration: "9:00:00",
+    views: "12M views"
+  },
+  {
+    id: "dKn2mxkS3Nc",
+    title: "NEET Chemistry All Chapters Revision",
+    channel: "Vedantu NEET",
+    duration: "7:30:00",
+    views: "4.2M views"
+  },
+  {
+    id: "K6rNTBtKRh0",
+    title: "NEET Physics Complete One Shot",
+    channel: "Physics Wallah NEET",
+    duration: "6:45:00",
+    views: "6.8M views"
+  },
+  {
+    id: "S0FuMHXjKbc",
+    title: "NEET 2025 Score 700+ Roadmap",
+    channel: "Unacademy NEET",
+    duration: "2:30:00",
+    views: "5.1M views"
+  },
+  {
+    id: "Ea_nRUFSMFI",
+    title: "NEET Biology Human Physiology",
+    channel: "Biomentors",
+    duration: "5:20:00",
+    views: "3.3M views"
+  }
+]
+
+export { jeeMainsVideos, jeeAdvancedVideos, neetVideos }
