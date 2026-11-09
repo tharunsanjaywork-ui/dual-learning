@@ -20,14 +20,38 @@ const secondaryConfig = {
   appId: import.meta.env.VITE_FIREBASE2_APP_ID,
 }
 
-export const primaryApp = initializeApp(primaryConfig)
-export const secondaryApp = initializeApp(secondaryConfig, 'secondary')
+export const isFirebaseConfigured = Boolean(
+  primaryConfig.apiKey && 
+  primaryConfig.apiKey !== 'undefined' && 
+  primaryConfig.projectId
+)
 
-export const primaryAuth = getAuth(primaryApp)
-export const secondaryAuth = getAuth(secondaryApp)
+export let primaryApp = null
+export let secondaryApp = null
+export let primaryAuth = null
+export let secondaryAuth = null
+export let primaryDb = null
+export let secondaryDb = null
 
-export const primaryDb = getFirestore(primaryApp)
-export const secondaryDb = getFirestore(secondaryApp)
+if (isFirebaseConfigured) {
+  try {
+    primaryApp = initializeApp(primaryConfig)
+    primaryAuth = getAuth(primaryApp)
+    primaryDb = getFirestore(primaryApp)
+  } catch (err) {
+    console.error('[DualZone] Failed to initialize primary Firebase:', err)
+  }
+
+  if (secondaryConfig.apiKey && secondaryConfig.apiKey !== 'undefined' && secondaryConfig.projectId) {
+    try {
+      secondaryApp = initializeApp(secondaryConfig, 'secondary')
+      secondaryAuth = getAuth(secondaryApp)
+      secondaryDb = getFirestore(secondaryApp)
+    } catch (err) {
+      console.warn('[DualZone] Failed to initialize secondary Firebase:', err)
+    }
+  }
+}
 
 // Auth ALWAYS uses primary (user profiles never move)
 export const auth = primaryAuth
