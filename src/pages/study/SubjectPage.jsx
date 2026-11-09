@@ -1,18 +1,20 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { getVideosBySubject, getThumbnail } from '../../data/videos'
 import { storage } from '../../utils/storage'
 
 const SUBJECT_INFO = {
   'jee-mains': { title: 'JEE Mains', desc: 'Master the fundamentals for JEE Main examination with comprehensive video lectures and practice material.', pill: 'Foundation Prep', videoCount: 5, notesCount: 12 },
-  'jee-advanced': { title: 'JEE Advanced', desc: 'Deep dive into advanced concepts for IIT JEE with problem-solving strategies and paper analysis.', pill: 'Advanced Prep', videoCount: 5, notesCount: 8 },
-  'neet': { title: 'NEET', desc: 'Complete Biology, Physics and Chemistry preparation for NEET with NCERT-focused content.', pill: 'Medical Prep', videoCount: 5, notesCount: 15 },
+  'jee-advanced': { title: 'JEE Advanced', desc: 'Deep dive into advanced concepts for IIT JEE with problem-solving strategies and paper analysis.', pill: 'Advanced Prep', videoCount: 4, notesCount: 8 },
+  'neet': { title: 'NEET', desc: 'Complete Biology, Physics and Chemistry preparation for NEET with NCERT-focused content.', pill: 'Medical Prep', videoCount: 4, notesCount: 15 },
+  'ca': { title: 'CA Foundation', desc: 'Chartered Accountancy foundation in principles of accounting, financial reporting, and mercantile basics.', pill: 'Commerce Prep', videoCount: 5, notesCount: 10 },
 }
 
 const TABS = ['Videos', 'Notes', 'Quiz', 'Progress']
 
 export default function SubjectPage({ subject }) {
   const [activeTab, setActiveTab] = useState('Videos')
+  const navigate = useNavigate()
   const info = SUBJECT_INFO[subject] || SUBJECT_INFO['jee-mains']
   const videos = getVideosBySubject(subject)
 
@@ -20,8 +22,12 @@ export default function SubjectPage({ subject }) {
     storage.setContinueWatching(video)
     storage.addVideoWatched(video.id)
     storage.markStudiedToday()
-    window.open(`https://www.youtube.com/watch?v=${video.id}`, '_blank')
+    navigate(`/study/watch/${video.id}`)
   }
+
+  const watchedVideos = storage.getVideosWatched()
+  const watchedForSubject = videos.filter(v => watchedVideos.includes(v.id)).length
+  const progressPct = videos.length > 0 ? Math.round((watchedForSubject / videos.length) * 100) : 0
 
   return (
     <div className="min-h-screen animate-page-enter">
@@ -36,7 +42,7 @@ export default function SubjectPage({ subject }) {
               <h1 className="font-headline text-3xl md:text-5xl lg:text-6xl font-black text-on-surface mb-3">{info.title}</h1>
               <p className="text-on-surface-variant text-sm md:text-base max-w-2xl mb-4">{info.desc}</p>
               <div className="flex items-center gap-4 text-on-surface-variant text-sm">
-                <span className="flex items-center gap-1"><span className="material-symbols-outlined text-base">play_circle</span>{info.videoCount} Videos</span>
+                <span className="flex items-center gap-1"><span className="material-symbols-outlined text-base">play_circle</span>{videos.length} Videos</span>
                 <span className="flex items-center gap-1"><span className="material-symbols-outlined text-base">description</span>{info.notesCount} Notes</span>
               </div>
             </div>
@@ -106,7 +112,7 @@ export default function SubjectPage({ subject }) {
                       {video.title}
                     </h3>
                     <p className="text-on-surface-variant text-xs mt-1">{video.channel}</p>
-                    <p className="text-on-surface-variant text-xs">{video.views} • 1 week ago</p>
+                    <p className="text-on-surface-variant text-xs mt-0.5">{video.duration} • {video.subject || 'Lecture'}</p>
                   </div>
                 </div>
               </button>
@@ -128,9 +134,16 @@ export default function SubjectPage({ subject }) {
                 <p className="text-on-surface-variant text-xs mb-3">Comprehensive study material covering all important concepts and formulas.</p>
                 <div className="flex items-center justify-between">
                   <span className="text-outline text-xs">{(2.5 + i * 0.8).toFixed(1)} MB</span>
-                  <button className="text-primary text-xs font-medium flex items-center gap-1 hover:gap-2 transition-all">
-                    <span className="material-symbols-outlined text-sm">download</span>Download PDF
-                  </button>
+                  <a
+                    href="#notes"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      navigate('/study/notes')
+                    }}
+                    className="text-primary text-xs font-medium flex items-center gap-1 hover:gap-2 transition-all cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-sm">open_in_new</span>View Notes
+                  </a>
                 </div>
               </div>
             ))}
@@ -152,11 +165,16 @@ export default function SubjectPage({ subject }) {
           <div className="text-center py-16">
             <span className="material-symbols-outlined text-primary text-6xl mb-4 block opacity-30">trending_up</span>
             <h3 className="font-headline text-xl font-bold text-on-surface mb-2">Your Progress</h3>
-            <p className="text-on-surface-variant text-sm mb-2">{info.title} — {storage.getVideosWatched().length} videos watched</p>
+            <p className="text-on-surface-variant text-sm mb-2">
+              {info.title} — {watchedForSubject} of {videos.length} videos completed
+            </p>
             <div className="w-full max-w-md mx-auto bg-surface-container-high rounded-full h-3 mt-6 overflow-hidden">
-              <div className="h-full gradient-primary rounded-full transition-all" style={{ width: '40%' }} />
+              <div
+                className="h-full gradient-primary rounded-full transition-all duration-500"
+                style={{ width: `${progressPct}%` }}
+              />
             </div>
-            <p className="text-on-surface-variant text-xs mt-2">40% complete</p>
+            <p className="text-on-surface-variant text-xs mt-2">{progressPct}% complete</p>
           </div>
         )}
       </div>

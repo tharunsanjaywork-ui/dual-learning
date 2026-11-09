@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app'
 import { getAuth } from 'firebase/auth'
-import { getFirestore } from 'firebase/firestore'
+import { getFirestore, doc, getDoc, setDoc, increment, serverTimestamp } from 'firebase/firestore'
 
 const primaryConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -55,16 +55,71 @@ export function getMessagesDbName() {
 }
 
 export async function checkAndSwitchMessagesDb() {
-  const usedMB = parseFloat(localStorage.getItem('dz_firestore_mb') || '0')
+  try {
+    const snap = await getDoc(doc(primaryDb, 'system', 'storageStats'))
+    if (snap.exists()) {
+      const data = snap.data()
+      const primaryBytes = data.primaryFirestoreBytes || 0
+      const primaryMB = primaryBytes / (1024 * 1024)
 
-  if (usedMB >= STORAGE_THRESHOLD_MB) {
-    if (localStorage.getItem(MESSAGES_KEY) !== 'secondary') {
-      localStorage.setItem(MESSAGES_KEY, 'secondary')
-      console.warn('[DualZone] Messages switched to secondary Firebase')
-      return 'secondary'
+      if (primaryMB >= STORAGE_THRESHOLD_MB) {
+        if (localStorage.getItem(MESSAGES_KEY) !== 'secondary') {
+          localStorage.setItem(MESSAGES_KEY, 'secondary')
+          console.warn('[DualZone] Messages switched to secondary Firebase based on central storageStats')
+          return 'secondary'
+        }
+      } else if (localStorage.getItem(MESSAGES_KEY) === 'secondary' && primaryMB < STORAGE_THRESHOLD_MB) {
+        // Space reclaimed in primary
+        localStorage.setItem(MESSAGES_KEY, 'primary')
+        return 'primary'
+      }
     }
+  } catch (err) {
+    console.warn('[DualZone] Central storage check failed, using cached state:', err.message)
   }
   return localStorage.getItem(MESSAGES_KEY) || 'primary'
+}
+
+// Centrally count Firestore message bytes in system/storageStats and per-user in storageByUser/{uid}
+export async function trackMessageStorageChange(bytes, isSecondary = false, uid = null, isNewMessage = true, userInfo = {}) {
+  try {
+    const field = isSecondary ? 'secondaryFirestoreBytes' : 'primaryFirestoreBytes'
+    // Central system stats
+    await setDoc(
+      doc(primaryDb, 'system', 'storageStats'),
+      {
+        [field]: increment(bytes),
+        totalFirestoreBytes: increment(bytes),
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    )
+
+    // Per-user stats
+    if (uid) {
+      const userPayload = {
+        uid,
+        bytes: increment(bytes),
+        messageCount: increment(isNewMessage ? 1 : (bytes < 0 ? -1 : 0)),
+        updatedAt: serverTimestamp(),
+      }
+      if (userInfo.displayName) userPayload.displayName = userInfo.displayName
+      if (userInfo.username) userPayload.username = userInfo.username
+
+      await setDoc(
+        doc(primaryDb, 'storageByUser', uid),
+        userPayload,
+        { merge: true }
+      )
+    }
+
+    // Keep localStorage cache in sync for offline display
+    const currentMB = parseFloat(localStorage.getItem('dz_firestore_mb') || '0')
+    const newMB = Math.max(0, currentMB + (bytes / (1024 * 1024)))
+    localStorage.setItem('dz_firestore_mb', newMB.toFixed(4))
+  } catch (err) {
+    console.warn('[DualZone] Failed to track message storage change:', err.message)
+  }
 }
 
 export function trackFirestoreWrite(estimatedBytes = 500) {

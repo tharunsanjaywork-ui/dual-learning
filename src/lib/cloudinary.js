@@ -43,6 +43,15 @@ export async function trackUploadSizeFirestore(bytes, accountId = 'primary') {
   try {
     const field = accountId === 'primary' ? 'primaryBytes' : 'secondaryBytes'
     await setDoc(
+      doc(primaryDb, 'system', 'storageStats'),
+      {
+        [field]: increment(bytes),
+        totalBytes: increment(bytes),
+      },
+      { merge: true }
+    )
+    // Keep cloudinaryStats in sync for backward compatibility
+    await setDoc(
       doc(primaryDb, 'system', 'cloudinaryStats'),
       { [field]: increment(bytes) },
       { merge: true }
@@ -58,16 +67,27 @@ export async function trackUploadSizeFirestore(bytes, accountId = 'primary') {
 
 export async function checkStorageUsage() {
   try {
-    const snap = await getDoc(doc(primaryDb, 'system', 'cloudinaryStats'))
+    let snap = await getDoc(doc(primaryDb, 'system', 'storageStats'))
+    if (!snap.exists()) {
+      snap = await getDoc(doc(primaryDb, 'system', 'cloudinaryStats'))
+    }
 
     const primaryBytes = snap.exists() ? (snap.data().primaryBytes || 0) : 0
     const secondaryBytes = snap.exists() ? (snap.data().secondaryBytes || 0) : 0
 
-    const LIMIT = 25 * 1024 * 1024 * 1024 // 25GB
+    const LIMIT = 25 * 1024 * 1024 * 1024 // 25GB per account
     const primaryPct = Math.round((primaryBytes / LIMIT) * 100)
     const secondaryPct = Math.round((secondaryBytes / LIMIT) * 100)
 
+    // Centralized failover check at 95% threshold
+    if (primaryPct >= 95 && !useSecondaryCloud && SECONDARY_CLOUD) {
+      switchCloudinaryToSecondary()
+    }
+
+    const activePercentage = useSecondaryCloud ? secondaryPct : primaryPct
+
     return {
+      percentage: Math.min(activePercentage, 100),
       primary: {
         usedBytes: primaryBytes,
         usedGB: (primaryBytes / (1024 ** 3)).toFixed(2),
@@ -83,8 +103,10 @@ export async function checkStorageUsage() {
     }
   } catch {
     const primaryBytes = parseInt(localStorage.getItem('dz_cloud_primary_bytes') || '0')
+    const primaryPct = Math.min(Math.round((primaryBytes / (25 * 1024 ** 3)) * 100), 100)
     return {
-      primary: { usedBytes: primaryBytes, usedGB: (primaryBytes / (1024 ** 3)).toFixed(2), totalGB: 25, percentage: 0 },
+      percentage: primaryPct,
+      primary: { usedBytes: primaryBytes, usedGB: (primaryBytes / (1024 ** 3)).toFixed(2), totalGB: 25, percentage: primaryPct },
       secondary: { usedBytes: 0, usedGB: '0.00', totalGB: 25, percentage: 0 }
     }
   }

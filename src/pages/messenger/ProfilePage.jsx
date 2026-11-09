@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext'
 import { useChat } from '../../context/ChatContext'
 import { db, getMessagesDbName } from '../../lib/firebase'
 import { checkStorageUsage } from '../../lib/cloudinary'
-import { doc, getDoc, updateDoc, arrayUnion, arrayRemove, addDoc, collection, serverTimestamp } from 'firebase/firestore'
+import { doc, getDoc, updateDoc, arrayUnion, arrayRemove, addDoc, collection, serverTimestamp, query, where, getDocs, onSnapshot } from 'firebase/firestore'
 import QRCode from 'qrcode'
 
 export default function ProfilePage() {
@@ -18,8 +18,26 @@ export default function ProfilePage() {
   const [showStorage, setShowStorage] = useState(false)
   const [storageData, setStorageData] = useState(null)
   const [loadingStorage, setLoadingStorage] = useState(false)
+  const [userStorageList, setUserStorageList] = useState([])
+  const [activeStoriesCount, setActiveStoriesCount] = useState(0)
 
   const isOwnProfile = userId === 'me' || userId === userProfile?.id
+
+  useEffect(() => {
+    const targetId = isOwnProfile ? userProfile?.id : userId
+    if (!targetId) return
+
+    const q = query(collection(db, 'stories'), where('userId', '==', targetId))
+    getDocs(q).then(snap => {
+      const active = snap.docs.filter(d => {
+        const data = d.data()
+        if (!data.createdAt) return true
+        const created = data.createdAt.toMillis ? data.createdAt.toMillis() : (data.createdAt.seconds ? data.createdAt.seconds * 1000 : 0)
+        return created > 0 && (Date.now() - created <= 86400000)
+      })
+      setActiveStoriesCount(active.length)
+    }).catch(() => {})
+  }, [userId, isOwnProfile, userProfile?.id])
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -96,26 +114,98 @@ export default function ProfilePage() {
     }
   }, [isOwnProfile, profile])
 
+  // Live storage subscriptions for system/storageStats and storageByUser
+  useEffect(() => {
+    if (!showStorage) return
+
+    setLoadingStorage(true)
+
+    // Fallback/initial check via checkStorageUsage
+    checkStorageUsage().then(usage => {
+      setStorageData(prev => ({
+        ...prev,
+        cloudinaryPrimaryUsedGB: parseFloat(usage?.primary?.usedGB || '0'),
+        cloudinaryPrimaryTotalGB: 25,
+        cloudinaryPrimaryPct: usage?.primary?.percentage || 0,
+        cloudinarySecondaryUsedGB: parseFloat(usage?.secondary?.usedGB || '0'),
+        cloudinarySecondaryTotalGB: 25,
+        cloudinarySecondaryPct: usage?.secondary?.percentage || 0,
+      }))
+    }).catch(() => {})
+
+    // Live listener for system/storageStats
+    const unsubStats = onSnapshot(doc(db, 'system', 'storageStats'), (docSnap) => {
+      const data = docSnap.exists() ? docSnap.data() : {}
+      const cloudLimit = 25 * 1024 * 1024 * 1024 // 25 GB
+      const firestoreLimitMB = 1024 // 1 GB (1024 MB)
+
+      const cloudPrimary = data.primaryBytes || 0
+      const cloudSecondary = data.secondaryBytes || 0
+      const firestorePrimary = data.primaryFirestoreBytes || 0
+      const firestoreSecondary = data.secondaryFirestoreBytes || 0
+
+      const primaryMB = firestorePrimary / (1024 * 1024)
+      const secondaryMB = firestoreSecondary / (1024 * 1024)
+
+      setStorageData(prev => ({
+        ...prev,
+        cloudinaryPrimaryUsedGB: cloudPrimary / (1024 ** 3),
+        cloudinaryPrimaryTotalGB: 25,
+        cloudinaryPrimaryPct: Math.min(Math.round((cloudPrimary / cloudLimit) * 100), 100),
+
+        cloudinarySecondaryUsedGB: cloudSecondary / (1024 ** 3),
+        cloudinarySecondaryTotalGB: 25,
+        cloudinarySecondaryPct: Math.min(Math.round((cloudSecondary / cloudLimit) * 100), 100),
+
+        firestorePrimaryMB: primaryMB < 1 ? primaryMB.toFixed(3) : primaryMB.toFixed(2),
+        firestorePrimaryTotalMB: firestoreLimitMB,
+        firestorePrimaryPct: Math.min(Math.round((primaryMB / firestoreLimitMB) * 100), 100),
+
+        firestoreSecondaryMB: secondaryMB < 1 ? secondaryMB.toFixed(3) : secondaryMB.toFixed(2),
+        firestoreSecondaryTotalMB: firestoreLimitMB,
+        firestoreSecondaryPct: Math.min(Math.round((secondaryMB / firestoreLimitMB) * 100), 100),
+
+        activeMessagesDb: getMessagesDbName(),
+        lastChecked: new Date().toLocaleTimeString(),
+      }))
+      setLoadingStorage(false)
+    }, (err) => {
+      console.warn('storageStats subscription error:', err)
+      setLoadingStorage(false)
+    })
+
+    // Live listener for storageByUser breakdown
+    const unsubUsers = onSnapshot(collection(db, 'storageByUser'), (snap) => {
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      list.sort((a, b) => (b.bytes || 0) - (a.bytes || 0))
+      setUserStorageList(list)
+    }, (err) => {
+      console.warn('storageByUser subscription error:', err)
+    })
+
+    return () => {
+      unsubStats()
+      unsubUsers()
+    }
+  }, [showStorage])
+
   const fetchStorageInfo = async () => {
     setLoadingStorage(true)
     try {
       const usage = await checkStorageUsage()
-      const firestoreMB = parseFloat(localStorage.getItem('dz_firestore_mb') || '0')
       const firestoreDbName = getMessagesDbName()
 
-      setStorageData({
+      setStorageData(prev => ({
+        ...prev,
         cloudinaryPrimaryUsedGB: parseFloat(usage.primary.usedGB),
         cloudinaryPrimaryTotalGB: 25,
         cloudinaryPrimaryPct: usage.primary.percentage,
         cloudinarySecondaryUsedGB: parseFloat(usage.secondary.usedGB),
         cloudinarySecondaryTotalGB: 25,
         cloudinarySecondaryPct: usage.secondary.percentage,
-        firestoreUsedMB: firestoreMB.toFixed(1),
-        firestoreTotalMB: 1024,
-        firestorePct: Math.round((firestoreMB / 1024) * 100),
         activeMessagesDb: firestoreDbName,
         lastChecked: new Date().toLocaleTimeString()
-      })
+      }))
     } catch (err) { console.error('Storage check failed:', err) }
     setLoadingStorage(false)
   }
@@ -181,12 +271,18 @@ export default function ProfilePage() {
         {/* Stats */}
         <div className="flex gap-8 mb-6 stagger-children">
           {[
-            { label: 'Followers', value: profile.followers?.length || 0 },
-            { label: 'Following', value: profile.following?.length || 0 },
-            { label: 'Stories', value: 0 },
+            { label: 'Followers', value: profile.followers?.length || 0, action: null },
+            { label: 'Following', value: profile.following?.length || 0, action: null },
+            { label: 'Stories', value: activeStoriesCount, action: () => navigate('/messenger/stories') },
           ].map(stat => (
-            <button key={stat.label} className="text-center group">
-              <p className="font-headline text-xl font-bold text-on-surface group-hover:text-secondary transition-colors">{stat.value}</p>
+            <button
+              key={stat.label}
+              onClick={stat.action || undefined}
+              className="text-center group cursor-pointer"
+            >
+              <p className="font-headline text-xl font-bold text-on-surface group-hover:text-secondary transition-colors">
+                {stat.value}
+              </p>
               <p className="text-on-surface-variant text-xs">{stat.label}</p>
             </button>
           ))}
@@ -290,61 +386,191 @@ export default function ProfilePage() {
         </section>
       )}
 
-      {/* Storage Modal */}
+      {/* Storage Modal — z-[75] above mobile bottom nav */}
       {showStorage && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-end justify-center p-4 animate-modal-backdrop" onClick={() => setShowStorage(false)}>
-          <div className="glass-strong rounded-2xl p-6 w-full max-w-md animate-modal-content" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-5">
-              <h3 className="text-on-surface font-bold text-lg">Storage Usage</h3>
-              <button onClick={fetchStorageInfo} className="p-2 rounded-xl hover:bg-surface-container-high">
-                <span className={`material-symbols-outlined text-secondary text-lg ${loadingStorage ? 'animate-spin-smooth' : ''}`}>refresh</span>
+        <div
+          className="fixed inset-0 bg-black/75 backdrop-blur-sm z-[75] flex items-center justify-center p-3 sm:p-4 animate-modal-backdrop select-none"
+          onClick={() => setShowStorage(false)}
+        >
+          <div
+            className="glass-strong rounded-2xl p-5 sm:p-6 w-full max-w-md max-h-[85vh] flex flex-col shadow-2xl border border-outline-variant/30 animate-modal-content"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-outline-variant/20 flex-shrink-0">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-secondary text-2xl">storage</span>
+                <div>
+                  <h3 className="text-on-surface font-bold text-base sm:text-lg leading-tight">Storage Usage</h3>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className="w-2 h-2 rounded-full bg-secondary animate-pulse" />
+                    <span className="text-[10px] text-on-surface-variant uppercase tracking-wider font-semibold">Live Snapshot</span>
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={fetchStorageInfo}
+                className="p-2 rounded-xl bg-surface-container hover:bg-surface-container-high transition-colors text-secondary"
+                title="Refresh Metrics"
+                aria-label="Refresh storage metrics"
+              >
+                <span className={`material-symbols-outlined text-lg ${loadingStorage ? 'animate-spin-smooth' : ''}`}>refresh</span>
               </button>
             </div>
 
-            {/* Cloudinary Primary */}
-            <div className="mb-4">
-              <div className="flex items-center gap-2 mb-2">
-                <span className="material-symbols-outlined text-tertiary text-lg">cloud</span>
-                <p className="text-on-surface font-medium text-sm">Cloudinary — Primary</p>
+            {/* Scrollable Metrics & User Breakdown */}
+            <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-4 py-3 custom-scrollbar">
+              {/* Cloudinary Primary */}
+              <div className="bg-surface-container/60 p-3 rounded-xl border border-outline-variant/20">
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-tertiary text-lg">cloud</span>
+                    <p className="text-on-surface font-medium text-xs sm:text-sm">Cloudinary — Primary</p>
+                  </div>
+                  <span className="text-xs font-bold text-on-surface">
+                    {storageData?.cloudinaryPrimaryUsedGB ? storageData.cloudinaryPrimaryUsedGB.toFixed(2) : '0.00'} GB
+                  </span>
+                </div>
+                <div className="w-full bg-surface-container-high rounded-full h-2 mb-1.5 overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-700 ${(storageData?.cloudinaryPrimaryPct || 0) > 90 ? 'bg-error' : (storageData?.cloudinaryPrimaryPct || 0) > 70 ? 'bg-yellow-500' : 'bg-gradient-to-r from-tertiary to-secondary'}`}
+                    style={{ width: `${Math.max(storageData?.cloudinaryPrimaryPct || 0, 1)}%` }}
+                  />
+                </div>
+                <div className="flex justify-between text-[11px] text-on-surface-variant">
+                  <span>Capacity: 25.00 GB</span>
+                  <span className="font-semibold">{storageData?.cloudinaryPrimaryPct || 0}% used</span>
+                </div>
               </div>
-              <div className="w-full bg-surface-container-high rounded-full h-2 mb-1.5">
-                <div className={`h-full rounded-full transition-all duration-1000 ${(storageData?.cloudinaryPrimaryPct || 0) > 90 ? 'bg-error' : (storageData?.cloudinaryPrimaryPct || 0) > 70 ? 'bg-yellow-500' : 'bg-gradient-to-r from-tertiary to-secondary'}`}
-                  style={{ width: `${Math.max(storageData?.cloudinaryPrimaryPct || 0, 1)}%` }} />
+
+              {/* Cloudinary Backup / Secondary */}
+              <div className="bg-surface-container/60 p-3 rounded-xl border border-outline-variant/20">
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-primary text-lg">cloud</span>
+                    <p className="text-on-surface font-medium text-xs sm:text-sm">Cloudinary — Backup</p>
+                  </div>
+                  <span className="text-xs font-bold text-on-surface">
+                    {storageData?.cloudinarySecondaryUsedGB ? storageData.cloudinarySecondaryUsedGB.toFixed(2) : '0.00'} GB
+                  </span>
+                </div>
+                <div className="w-full bg-surface-container-high rounded-full h-2 mb-1.5 overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-700 ${(storageData?.cloudinarySecondaryPct || 0) > 90 ? 'bg-error' : (storageData?.cloudinarySecondaryPct || 0) > 70 ? 'bg-yellow-500' : 'bg-gradient-to-r from-primary to-tertiary'}`}
+                    style={{ width: `${Math.max(storageData?.cloudinarySecondaryPct || 0, 1)}%` }}
+                  />
+                </div>
+                <div className="flex justify-between text-[11px] text-on-surface-variant">
+                  <span>Capacity: 25.00 GB</span>
+                  <span className="font-semibold">{storageData?.cloudinarySecondaryPct || 0}% used</span>
+                </div>
               </div>
-              <p className="text-on-surface-variant text-xs">{storageData?.cloudinaryPrimaryUsedGB?.toFixed(2) || '0.00'} GB / 25 GB ({storageData?.cloudinaryPrimaryPct || 0}%)</p>
+
+              {/* Firebase Messages — PRIMARY */}
+              <div className="bg-surface-container/60 p-3 rounded-xl border border-outline-variant/20">
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-secondary text-lg">database</span>
+                    <p className="text-on-surface font-medium text-xs sm:text-sm">Firebase Messages — Primary</p>
+                  </div>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${storageData?.activeMessagesDb === 'primary' ? 'bg-secondary/20 text-secondary border border-secondary/40' : 'bg-surface-container-high text-on-surface-variant'}`}>
+                    {storageData?.activeMessagesDb === 'primary' ? 'Active' : 'Standby'}
+                  </span>
+                </div>
+                <div className="w-full bg-surface-container-high rounded-full h-2 mb-1.5 overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-700 ${(storageData?.firestorePrimaryPct || 0) > 90 ? 'bg-error' : (storageData?.firestorePrimaryPct || 0) > 70 ? 'bg-yellow-500' : 'bg-gradient-to-r from-secondary to-tertiary'}`}
+                    style={{ width: `${Math.max(storageData?.firestorePrimaryPct || 0, 1)}%` }}
+                  />
+                </div>
+                <div className="flex justify-between text-[11px] text-on-surface-variant">
+                  <span>{storageData?.firestorePrimaryMB || '0.00'} MB / 1024 MB</span>
+                  <span className="font-semibold">{storageData?.firestorePrimaryPct || 0}% used</span>
+                </div>
+              </div>
+
+              {/* Firebase Messages — SECONDARY (Backup) */}
+              <div className="bg-surface-container/60 p-3 rounded-xl border border-outline-variant/20">
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-primary text-lg">database</span>
+                    <p className="text-on-surface font-medium text-xs sm:text-sm">Firebase Messages — Secondary</p>
+                  </div>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${storageData?.activeMessagesDb === 'secondary' ? 'bg-primary/20 text-primary border border-primary/40' : 'bg-surface-container-high text-on-surface-variant'}`}>
+                    {storageData?.activeMessagesDb === 'secondary' ? 'Active' : 'Standby'}
+                  </span>
+                </div>
+                <div className="w-full bg-surface-container-high rounded-full h-2 mb-1.5 overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-700 ${(storageData?.firestoreSecondaryPct || 0) > 90 ? 'bg-error' : (storageData?.firestoreSecondaryPct || 0) > 70 ? 'bg-yellow-500' : 'bg-gradient-to-r from-primary to-secondary'}`}
+                    style={{ width: `${Math.max(storageData?.firestoreSecondaryPct || 0, 1)}%` }}
+                  />
+                </div>
+                <div className="flex justify-between text-[11px] text-on-surface-variant">
+                  <span>{storageData?.firestoreSecondaryMB || '0.00'} MB / 1024 MB</span>
+                  <span className="font-semibold">{storageData?.firestoreSecondaryPct || 0}% used</span>
+                </div>
+              </div>
+
+              {/* Live "Usage by user" list */}
+              <div className="bg-surface-container/60 p-3 rounded-xl border border-outline-variant/20">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-secondary text-base">group</span>
+                    <h4 className="text-on-surface font-bold text-xs uppercase tracking-wider">Usage by User</h4>
+                  </div>
+                  <span className="text-[11px] text-on-surface-variant">{userStorageList.length} users</span>
+                </div>
+
+                {userStorageList.length === 0 ? (
+                  <p className="text-xs text-on-surface-variant/70 italic py-2 text-center">
+                    No individual storage records recorded yet.
+                  </p>
+                ) : (
+                  <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                    {userStorageList.map((u) => {
+                      const userBytes = u.bytes || 0
+                      const userMB = userBytes / (1024 * 1024)
+                      const isMe = u.id === userProfile?.id || u.uid === userProfile?.id
+
+                      return (
+                        <div
+                          key={u.id || u.uid}
+                          className="flex items-center justify-between py-1.5 px-2 rounded-lg bg-surface-container-high/60 text-xs"
+                        >
+                          <div className="min-w-0 flex-1 pr-2">
+                            <p className="text-on-surface font-medium truncate">
+                              {u.displayName || (u.username ? `@${u.username}` : `User ${u.id?.substring(0, 6)}`)}
+                              {isMe && <span className="text-[10px] text-secondary ml-1.5 font-bold">(You)</span>}
+                            </p>
+                            <p className="text-[10px] text-on-surface-variant">
+                              {u.messageCount || 0} messages
+                            </p>
+                          </div>
+                          <span className="font-mono text-secondary font-semibold flex-shrink-0">
+                            {userMB < 1 ? `${(userBytes / 1024).toFixed(1)} KB` : `${userMB.toFixed(2)} MB`}
+                          </span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
 
-            {/* Cloudinary Secondary */}
-            <div className="mb-4">
-              <div className="flex items-center gap-2 mb-2">
-                <span className="material-symbols-outlined text-primary text-lg">cloud</span>
-                <p className="text-on-surface font-medium text-sm">Cloudinary — Backup</p>
-              </div>
-              <div className="w-full bg-surface-container-high rounded-full h-2 mb-1.5">
-                <div className={`h-full rounded-full transition-all duration-1000 ${(storageData?.cloudinarySecondaryPct || 0) > 90 ? 'bg-error' : (storageData?.cloudinarySecondaryPct || 0) > 70 ? 'bg-yellow-500' : 'bg-gradient-to-r from-primary to-tertiary'}`}
-                  style={{ width: `${Math.max(storageData?.cloudinarySecondaryPct || 0, 1)}%` }} />
-              </div>
-              <p className="text-on-surface-variant text-xs">{storageData?.cloudinarySecondaryUsedGB?.toFixed(2) || '0.00'} GB / 25 GB ({storageData?.cloudinarySecondaryPct || 0}%)</p>
+            {/* Pinned Modal Footer with Close Button — always visible */}
+            <div className="pt-3 border-t border-outline-variant/20 flex-shrink-0 flex items-center justify-between gap-3">
+              <span className="text-[10px] text-outline truncate">
+                {storageData?.lastChecked ? `Synced: ${storageData.lastChecked}` : 'Connected'}
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowStorage(false)}
+                className="px-5 py-2 rounded-full bg-surface-container-highest hover:bg-surface-bright text-on-surface font-medium text-xs transition-colors"
+              >
+                Close
+              </button>
             </div>
-
-            {/* Firebase */}
-            <div className="mb-4">
-              <div className="flex items-center gap-2 mb-2">
-                <span className="material-symbols-outlined text-secondary text-lg">database</span>
-                <p className="text-on-surface font-medium text-sm">Firebase Messages</p>
-                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${storageData?.activeMessagesDb === 'secondary' ? 'bg-primary/20 text-primary' : 'bg-secondary/20 text-secondary'}`}>
-                  {storageData?.activeMessagesDb || 'primary'}
-                </span>
-              </div>
-              <div className="w-full bg-surface-container-high rounded-full h-2 mb-1.5">
-                <div className={`h-full rounded-full transition-all duration-1000 ${(storageData?.firestorePct || 0) > 90 ? 'bg-error' : (storageData?.firestorePct || 0) > 70 ? 'bg-yellow-500' : 'bg-gradient-to-r from-secondary to-tertiary'}`}
-                  style={{ width: `${Math.max(storageData?.firestorePct || 0, 1)}%` }} />
-              </div>
-              <p className="text-on-surface-variant text-xs">{storageData?.firestoreUsedMB || '0'} MB / 1024 MB ({storageData?.firestorePct || 0}%)</p>
-            </div>
-
-            {storageData?.lastChecked && <p className="text-outline text-xs text-center">Last checked: {storageData.lastChecked}</p>}
-            <button onClick={() => setShowStorage(false)} className="w-full mt-4 py-2.5 rounded-full bg-surface-container-highest text-on-surface-variant text-sm font-medium">Close</button>
           </div>
         </div>
       )}

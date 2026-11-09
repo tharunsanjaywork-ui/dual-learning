@@ -1,4 +1,4 @@
-const CACHE_NAME = 'dualzone-v1'
+const CACHE_NAME = 'dualzone-v2'
 const OFFLINE_URLS = [
   '/',
   '/index.html',

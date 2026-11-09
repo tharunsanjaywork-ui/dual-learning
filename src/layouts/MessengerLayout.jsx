@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
@@ -32,10 +32,39 @@ export default function MessengerLayout() {
   // Check if we're in a chat (hide bottom nav on mobile)
   const isInChat = location.pathname.includes('/chat/') || location.pathname.includes('/group/')
 
+  // Prevent background scrolling when in chat
+  useEffect(() => {
+    if (isInChat) {
+      document.body.classList.add('in-chat')
+    } else {
+      document.body.classList.remove('in-chat')
+    }
+    return () => {
+      document.body.classList.remove('in-chat')
+    }
+  }, [isInChat])
+
+  // Visual viewport resize fallback so header and composer never get pushed off screen
+  useEffect(() => {
+    if (!window.visualViewport) return
+    const updateViewport = () => {
+      const vh = window.visualViewport.height
+      document.documentElement.style.setProperty('--visual-viewport-height', `${vh}px`)
+    }
+    window.visualViewport.addEventListener('resize', updateViewport)
+    window.visualViewport.addEventListener('scroll', updateViewport)
+    updateViewport()
+    return () => {
+      window.visualViewport?.removeEventListener('resize', updateViewport)
+      window.visualViewport?.removeEventListener('scroll', updateViewport)
+      document.documentElement.style.removeProperty('--visual-viewport-height')
+    }
+  }, [])
+
   return (
-    <div className="min-h-screen bg-background">
-      {/* Top Bar */}
-      <nav className="fixed top-0 left-0 right-0 z-50 h-14 md:h-16 bg-surface-container-low/80 backdrop-blur-xl border-b border-outline-variant/20 px-3 md:px-6 flex items-center gap-2 md:gap-3">
+    <div className={isInChat ? 'chat-root-column bg-background' : 'min-h-screen bg-background'}>
+      {/* Top Bar — compact max 56px on mobile (h-14), 64px on desktop */}
+      <nav className="fixed top-0 left-0 right-0 z-50 h-14 md:h-16 bg-surface-container-low/90 backdrop-blur-xl border-b border-outline-variant/20 px-3 md:px-6 flex items-center gap-2 md:gap-3 flex-shrink-0">
         {/* Logo */}
         <NavLink to="/messenger/chats" className="flex items-center gap-2 flex-shrink-0">
           <div className="w-8 h-8 rounded-lg gradient-secondary flex items-center justify-center">
@@ -140,12 +169,12 @@ export default function MessengerLayout() {
         </div>
       </nav>
 
-      {/* Page Content */}
-      <main className="pt-14 md:pt-16 pb-20 md:pb-0">
+      {/* Page Content: in chat, fills remaining height with NO bottom padding */}
+      <main className={`flex-1 flex flex-col min-h-0 ${isInChat ? 'pt-14 md:pt-16 pb-0 overflow-hidden' : 'pt-14 md:pt-16 pb-20 md:pb-0'}`}>
         <Outlet />
       </main>
 
-      {/* Mobile Bottom Nav */}
+      {/* Mobile Bottom Nav — strictly hidden in chat */}
       {!isInChat && (
         <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-surface-container-low/90 backdrop-blur-xl border-t border-outline-variant/20 px-2 py-1" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
           <div className="flex items-center">

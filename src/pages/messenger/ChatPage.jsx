@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, Fragment } from 'react'
 import { isUserOnline } from '../../utils/storage'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useChat } from '../../context/ChatContext'
@@ -7,83 +7,11 @@ import { db } from '../../lib/firebase'
 import { doc, getDoc } from 'firebase/firestore'
 import { uploadToCloudinary, uploadBlobToCloudinary, getFileType } from '../../lib/cloudinary'
 import { searchGifs } from '../../lib/giphy'
-
-function AudioPlayer({ src }) {
-  const audioRef = useRef(null)
-  const [playing, setPlaying] = useState(false)
-  const [progress, setProgress] = useState(0)
-  const [duration, setDuration] = useState(0)
-  const [currentTime, setCurrentTime] = useState(0)
-
-  const togglePlay = () => {
-    if (!audioRef.current) return
-    if (playing) audioRef.current.pause()
-    else audioRef.current.play()
-    setPlaying(!playing)
-  }
-
-  const handleTimeUpdate = () => {
-    if (!audioRef.current) return
-    const pct = (audioRef.current.currentTime / audioRef.current.duration) * 100
-    setProgress(pct || 0)
-    setCurrentTime(audioRef.current.currentTime || 0)
-  }
-
-  const handleEnded = () => { setPlaying(false); setProgress(0); setCurrentTime(0) }
-
-  const handleSeek = (e) => {
-    if (!audioRef.current) return
-    const rect = e.currentTarget.getBoundingClientRect()
-    const pct = (e.clientX - rect.left) / rect.width
-    audioRef.current.currentTime = pct * audioRef.current.duration
-  }
-
-  const fmt = (s) => {
-    if (!s || isNaN(s)) return '0:00'
-    return `${Math.floor(s/60)}:${Math.floor(s%60).toString().padStart(2,'0')}`
-  }
-
-  const bars = [3,6,9,5,12,8,4,15,7,10,6,13,4,8,11,5,9,6,14,7]
-
-  return (
-    <div>
-      <p className="text-[10px] text-on-surface-variant/50 mb-1.5 font-medium tracking-wide uppercase">Voice Message</p>
-      <div className="flex items-center gap-3 min-w-[220px] max-w-[260px]">
-        <audio ref={audioRef} src={src} onTimeUpdate={handleTimeUpdate}
-          onLoadedMetadata={() => setDuration(audioRef.current?.duration || 0)}
-          onEnded={handleEnded} preload="metadata" />
-        <button onClick={togglePlay}
-          className="w-10 h-10 rounded-full bg-secondary/20 border border-secondary/30 flex items-center justify-center flex-shrink-0 hover:bg-secondary/30 active:scale-90 transition-all">
-          <span className="material-symbols-outlined text-secondary text-xl filled">{playing ? 'pause' : 'play_arrow'}</span>
-        </button>
-        <div className="flex-1">
-          <div className="flex items-end gap-0.5 h-8 cursor-pointer mb-1" onClick={handleSeek}>
-            {bars.map((h, i) => {
-              const isPlayed = (i / bars.length)*100 <= progress
-              return (
-                <div key={i} className="flex-1 rounded-full"
-                  style={{
-                    height: `${h}px`,
-                    backgroundColor: isPlayed ? '#00e475' : 'rgba(170,171,178,0.3)',
-                    animation: playing && isPlayed
-                      ? `audio-bar-dance ${0.4 + (i % 5) * 0.1}s ease-in-out infinite`
-                      : 'none',
-                    animationDelay: `${i * 30}ms`,
-                    transformOrigin: 'bottom',
-                    transition: 'background-color 0.2s ease',
-                  }} />
-              )
-            })}
-          </div>
-          <div className="flex justify-between">
-            <span className="text-[10px] text-on-surface-variant/70">{fmt(currentTime)}</span>
-            <span className="text-[10px] text-on-surface-variant/70">{fmt(duration)}</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
+import AttachBottomSheet from '../../components/chat/AttachBottomSheet'
+import DateSeparator, { formatDateSeparator } from '../../components/chat/DateSeparator'
+import ScrollToBottomButton from '../../components/chat/ScrollToBottomButton'
+import MessageBubble from '../../components/chat/MessageBubble'
+import MediaViewerModal from '../../components/chat/MediaViewerModal'
 
 
 const EMOJI_CATEGORIES = {
@@ -105,7 +33,11 @@ export default function ChatPage() {
   const navigate = useNavigate()
   const { messages, setActiveChat, sendMessage, markAsSeen, addReaction, deleteMessage, editMessage, toggleStarMessage, forwardMessage, typingUsers, setTyping, chats } = useChat()
   const { userProfile } = useAuth()
-  const messagesEndRef = useRef(null)
+  const listRef = useRef(null)
+  const isNearBottomRef = useRef(true)
+  const [showScrollBottom, setShowScrollBottom] = useState(false)
+  const [unreadCountBelow, setUnreadCountBelow] = useState(0)
+  const [showHeaderMenu, setShowHeaderMenu] = useState(false)
   const messageRefs = useRef({})
   const inputRef = useRef(null)
   const mediaRecorderRef = useRef(null)
@@ -115,6 +47,7 @@ export default function ChatPage() {
   const audioStreamRef = useRef(null)
   const typingTimeoutRef = useRef(null)
 
+  const [activeMedia, setActiveMedia] = useState(null)
   const [text, setText] = useState('')
   const [otherUser, setOtherUser] = useState(null)
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
@@ -133,6 +66,26 @@ export default function ChatPage() {
   const [showReactPicker, setShowReactPicker] = useState(null)
   const [forwardModal, setForwardModal] = useState(null)
 
+  const handleScroll = () => {
+    if (!listRef.current) return
+    const { scrollTop, scrollHeight, clientHeight } = listRef.current
+    const distance = scrollHeight - scrollTop - clientHeight
+    const near = distance < 120
+    isNearBottomRef.current = near
+    setShowScrollBottom(!near)
+    if (near) setUnreadCountBelow(0)
+  }
+
+  const scrollToBottom = useCallback((smooth = true) => {
+    if (!listRef.current) return
+    listRef.current.scrollTo({
+      top: listRef.current.scrollHeight,
+      behavior: smooth ? 'smooth' : 'auto'
+    })
+    setUnreadCountBelow(0)
+    setShowScrollBottom(false)
+    isNearBottomRef.current = true
+  }, [])
 
   const scrollToMessage = (msgId) => {
     const el = messageRefs.current[msgId]
@@ -156,10 +109,30 @@ export default function ChatPage() {
     return () => setActiveChat(null)
   }, [chatId, userProfile?.id])
 
-  // Auto-scroll to bottom
+  // Auto-scroll on new messages only if already near bottom
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+    if (messages.length === 0) return
+    if (isNearBottomRef.current) {
+      scrollToBottom(true)
+    } else {
+      setUnreadCountBelow(c => c + 1)
+    }
+  }, [messages, scrollToBottom])
+
+  // Scroll to bottom on initial load / chat change
+  useEffect(() => {
+    if (messages.length > 0) {
+      setTimeout(() => scrollToBottom(false), 50)
+    }
+  }, [chatId, scrollToBottom])
+
+  // Auto-resize textarea up to 5 lines (~128px)
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.style.height = 'auto'
+      inputRef.current.style.height = `${Math.min(inputRef.current.scrollHeight, 128)}px`
+    }
+  }, [text])
 
   // Mark messages as seen
   useEffect(() => {
@@ -338,117 +311,130 @@ export default function ChatPage() {
     setForwardModal(null)
   }
 
-  const renderMessage = (msg) => {
-    const isDeleted = msg.isDeleted
-
-    if (isDeleted) {
-      return <p className="text-on-surface-variant text-sm italic">This message was deleted</p>
-    }
-
-    switch (msg.type) {
-      case 'image':
-        return <img src={msg.fileURL} alt="" className="max-w-[280px] rounded-xl cursor-pointer hover:opacity-90 transition-opacity" onClick={() => window.open(msg.fileURL)} />
-      case 'audio':
-        return <AudioPlayer src={msg.fileURL} />
-      case 'video':
-        return (
-          <div className="relative max-w-[280px] rounded-xl overflow-hidden cursor-pointer" onClick={() => window.open(msg.fileURL)}>
-            <video src={msg.fileURL} className="w-full" />
-            <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
-              <span className="material-symbols-outlined filled text-white text-3xl">play_arrow</span>
-            </div>
-          </div>
-        )
-      case 'file':
-        return (
-          <a href={msg.fileURL} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 bg-white/5 rounded-xl p-3 min-w-[200px] hover:bg-white/10 transition-colors">
-            <span className="material-symbols-outlined text-2xl">description</span>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate">{msg.fileName || 'File'}</p>
-              <p className="text-xs opacity-60">{msg.fileSize ? `${(msg.fileSize / 1024).toFixed(1)} KB` : ''}</p>
-            </div>
-            <span className="material-symbols-outlined text-lg">download</span>
-          </a>
-        )
-      case 'gif':
-        return (
-          <div className="relative max-w-[250px] rounded-xl overflow-hidden">
-            <img src={msg.fileURL} alt={msg.content} className="w-full" />
-            <span className="absolute bottom-1 right-1 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded font-bold">GIF</span>
-          </div>
-        )
-      case 'location':
-        return (
-          <div className="bg-white/5 rounded-xl overflow-hidden min-w-[200px]">
-            <div className="h-32 bg-surface-container-highest flex items-center justify-center">
-              <span className="material-symbols-outlined text-3xl text-secondary">location_on</span>
-            </div>
-            <p className="px-3 py-2 text-xs">{msg.location?.address || 'Shared location'}</p>
-          </div>
-        )
-      default:
-        return <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{msg.content}</p>
-    }
-  }
-
   return (
-    <div className="flex flex-col h-[calc(100vh-3.5rem)] md:h-[calc(100vh-4rem)] animate-page-enter">
-      {/* Chat Top Bar */}
-      <div className="flex items-center gap-3 px-4 py-3 bg-surface-container-low/80 backdrop-blur-xl border-b border-outline-variant/20 flex-shrink-0">
-        <button onClick={() => navigate('/messenger/chats')} className="p-1.5 -ml-1">
-          <span className="material-symbols-outlined text-on-surface-variant">arrow_back</span>
+    <div className="flex-1 flex flex-col min-h-0 h-full overflow-hidden relative animate-page-enter">
+      {/* Chat Top Bar — shrink-0 and always visible */}
+      <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 bg-surface-container-low/90 backdrop-blur-xl border-b border-outline-variant/20 flex-shrink-0 z-20">
+        <button
+          onClick={() => navigate('/messenger/chats')}
+          className="p-1.5 -ml-1 rounded-xl text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors"
+          aria-label="Back to chats"
+        >
+          <span className="material-symbols-outlined text-xl">arrow_back</span>
         </button>
+
         <button
           onClick={() => otherUser?.id && navigate(`/messenger/profile/${otherUser.id}`)}
-          className="flex items-center gap-3 flex-1 min-w-0 hover:opacity-80 transition-opacity cursor-pointer disabled:cursor-default"
+          className="flex items-center gap-2.5 sm:gap-3 flex-1 min-w-0 hover:opacity-85 transition-opacity cursor-pointer disabled:cursor-default text-left"
           disabled={!otherUser}
         >
           <div className="relative flex-shrink-0">
-            <div className="w-10 h-10 rounded-full overflow-hidden">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full overflow-hidden bg-surface-container-highest">
               {otherUser?.profilePic ? (
-                <img src={otherUser.profilePic} alt="" className="w-full h-full object-cover" />
+                <img src={otherUser.profilePic} alt={otherUser?.displayName || 'User'} className="w-full h-full object-cover" />
               ) : (
-                <div className="w-full h-full bg-surface-container-highest flex items-center justify-center">
-                  <span className="material-symbols-outlined text-outline">person</span>
+                <div className="w-full h-full flex items-center justify-center">
+                  <span className="material-symbols-outlined text-outline text-lg">person</span>
                 </div>
               )}
             </div>
-            {isUserOnline(otherUser) && <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-secondary rounded-full border-2 border-surface-container-low online-dot-animated" />}
+            {isUserOnline(otherUser) && (
+              <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-secondary rounded-full border-2 border-surface-container-low online-dot-animated" />
+            )}
           </div>
-          <div className="flex-1 min-w-0 text-left">
-            <h3 className="text-on-surface font-medium text-sm truncate">{otherUser?.displayName || 'Loading...'}</h3>
-            <p className="text-on-surface-variant text-xs">
-              {Object.keys(typingUsers).filter(uid => uid !== userProfile?.id).length > 0
-                ? <span className="text-secondary animate-pulse flex items-center gap-1">
-                    <span className="typing-dot w-1 h-1 rounded-full bg-secondary inline-block" />
-                    <span className="typing-dot w-1 h-1 rounded-full bg-secondary inline-block" />
-                    <span className="typing-dot w-1 h-1 rounded-full bg-secondary inline-block" />
-                    typing
-                  </span>
-                : isUserOnline(otherUser) ? 'Online' : 'Offline'
-              }
+          <div className="flex-1 min-w-0">
+            <h3 className="text-on-surface font-medium text-sm truncate leading-tight">
+              {otherUser?.displayName || 'Loading...'}
+            </h3>
+            <p className="text-on-surface-variant text-xs truncate leading-tight mt-0.5">
+              {Object.keys(typingUsers).filter(uid => uid !== userProfile?.id).length > 0 ? (
+                <span className="text-secondary animate-pulse flex items-center gap-1 font-medium">
+                  <span className="typing-dot w-1 h-1 rounded-full bg-secondary inline-block" />
+                  <span className="typing-dot w-1 h-1 rounded-full bg-secondary inline-block" />
+                  <span className="typing-dot w-1 h-1 rounded-full bg-secondary inline-block" />
+                  typing...
+                </span>
+              ) : isUserOnline(otherUser) ? (
+                <span className="text-secondary font-medium">Online</span>
+              ) : (
+                'Offline'
+              )}
             </p>
           </div>
         </button>
-        <div className="flex items-center gap-1">
-          <button onClick={() => { if (!otherUser?.id || !userProfile?.id) return; const id = `${userProfile.id}_${otherUser.id}_${Date.now()}`; window.dispatchEvent(new CustomEvent('dz_start_call', { detail: { callId: id, otherUser, isOutgoing: true } })) }} className="p-2 rounded-xl text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-all">
+
+        <div className="flex items-center gap-1 flex-shrink-0 relative">
+          <button
+            onClick={() => {
+              if (!otherUser?.id || !userProfile?.id) return
+              const id = `${userProfile.id}_${otherUser.id}_${Date.now()}`
+              window.dispatchEvent(new CustomEvent('dz_start_call', { detail: { callId: id, otherUser, isOutgoing: true } }))
+            }}
+            className="p-2 rounded-xl text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors"
+            title="Audio call"
+            aria-label="Start voice call"
+          >
             <span className="material-symbols-outlined text-xl">call</span>
           </button>
-          <button className="p-2 rounded-xl text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-all hidden md:flex">
-            <span className="material-symbols-outlined text-xl">videocam</span>
-          </button>
-          <button className="p-2 rounded-xl text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-all">
+
+          <button
+            onClick={() => setShowHeaderMenu(!showHeaderMenu)}
+            className="p-2 rounded-xl text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors"
+            title="More options"
+            aria-label="More options"
+          >
             <span className="material-symbols-outlined text-xl">more_vert</span>
           </button>
+
+          {/* Three-dots dropdown menu */}
+          {showHeaderMenu && (
+            <>
+              <div className="fixed inset-0 z-30" onClick={() => setShowHeaderMenu(false)} />
+              <div className="absolute right-0 top-12 glass-strong rounded-2xl p-1.5 w-48 shadow-2xl border border-outline-variant/20 animate-scale-in z-40">
+                <button
+                  onClick={() => {
+                    setShowHeaderMenu(false)
+                    if (otherUser?.id) navigate(`/messenger/profile/${otherUser.id}`)
+                  }}
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors w-full text-left"
+                >
+                  <span className="material-symbols-outlined text-lg">person</span>
+                  View Profile
+                </button>
+                <button
+                  onClick={() => {
+                    setShowHeaderMenu(false)
+                    navigate('/messenger/settings')
+                  }}
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors w-full text-left"
+                >
+                  <span className="material-symbols-outlined text-lg">wallpaper</span>
+                  Wallpaper
+                </button>
+                <button
+                  onClick={() => {
+                    setShowHeaderMenu(false)
+                    navigate('/messenger/chats')
+                  }}
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors w-full text-left"
+                >
+                  <span className="material-symbols-outlined text-lg">close</span>
+                  Close Chat
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Messages */}
+      {/* Messages Scroll Area — ONLY scrollable area */}
       <div
-        className="flex-1 overflow-y-auto px-4 py-4 space-y-2"
+        ref={listRef}
+        onScroll={handleScroll}
+        className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-3 sm:px-4 py-3 space-y-2 overscroll-contain relative"
         style={(() => {
           const wp = localStorage.getItem('dz_chat_wallpaper')
-          return wp ? {
+          return wp && typeof wp === 'string' && wp.startsWith('http') ? {
             backgroundImage: `linear-gradient(rgba(13,14,17,0.75), rgba(13,14,17,0.75)), url(${wp})`,
             backgroundSize: 'cover',
             backgroundPosition: 'center',
@@ -456,77 +442,56 @@ export default function ChatPage() {
           } : {}
         })()}
       >
-        {messages.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-full text-center">
+        {messages.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full text-center py-12">
             <span className="material-symbols-outlined text-5xl text-on-surface-variant opacity-20 mb-3">chat_bubble</span>
             <p className="text-on-surface-variant text-sm">No messages yet. Say hello! 👋</p>
           </div>
+        ) : (
+          messages.map((msg, idx) => {
+            const isMine = msg.senderId === userProfile?.id
+            const prevMsg = idx > 0 ? messages[idx - 1] : null
+            const isNewDay = !prevMsg || (() => {
+              const d1 = msg.createdAt?.toDate ? msg.createdAt.toDate() : new Date(msg.createdAt || Date.now())
+              const d2 = prevMsg.createdAt?.toDate ? prevMsg.createdAt.toDate() : new Date(prevMsg.createdAt || Date.now())
+              return d1.toDateString() !== d2.toDateString()
+            })()
+
+            const replyMsg = msg.replyTo ? messages.find(m => m.id === msg.replyTo) : null
+
+            return (
+              <Fragment key={msg.id}>
+                {isNewDay && <DateSeparator date={msg.createdAt} />}
+                <MessageBubble
+                  ref={el => { if (el) messageRefs.current[msg.id] = el }}
+                  msg={msg}
+                  isMine={isMine}
+                  replyMessage={replyMsg ? {
+                    ...replyMsg,
+                    isMine: replyMsg.senderId === userProfile?.id,
+                    senderName: otherUser?.displayName,
+                  } : null}
+                  onReplyClick={scrollToMessage}
+                  onContextMenu={openContextMenu}
+                  onOpenMedia={setActiveMedia}
+                />
+              </Fragment>
+            )
+          })
         )}
-        {messages.map((msg) => {
-          const isMine = msg.senderId === userProfile?.id
-
-          return (
-            <div key={msg.id} ref={el => { if (el) messageRefs.current[msg.id] = el }} className={`flex ${isMine ? 'justify-end' : 'justify-start'} ${isMine ? 'animate-message-right' : 'animate-message-left'}`} onContextMenu={(e) => openContextMenu(e, msg)}>
-              <div className={`max-w-[75%] md:max-w-[60%] ${isMine ? 'order-1' : ''}`}>
-                {/* Reply preview */}
-                {msg.replyTo && (() => {
-                  const original = messages.find(m => m.id === msg.replyTo)
-                  return (
-                    <button
-                      onClick={() => scrollToMessage(msg.replyTo)}
-                      className="w-full text-left bg-black/20 rounded-xl px-3 py-2 mb-1.5 border-l-2 border-secondary hover:bg-black/30 transition-colors"
-                    >
-                      <p className="text-secondary text-[10px] font-semibold mb-0.5">
-                        {original?.senderId === userProfile?.id ? 'You' : otherUser?.displayName || 'User'}
-                      </p>
-                      <p className="text-on-surface-variant text-xs truncate">
-                        {original?.type === 'image' ? '📷 Photo'
-                         : original?.type === 'audio' ? '🎤 Voice message'
-                         : original?.type === 'video' ? '🎬 Video'
-                         : original?.type === 'file' ? '📎 File'
-                         : original?.type === 'gif' ? '🎞 GIF'
-                         : original?.content || 'Message'}
-                      </p>
-                    </button>
-                  )
-                })()}
-
-                <div className={`rounded-2xl px-4 py-2.5 ${
-                  isMine
-                    ? 'bg-secondary-container/30 border border-secondary/10 rounded-br-md'
-                    : 'bg-surface-container-high rounded-bl-md'
-                }`} style={isMine ? { borderRight: '3px solid var(--secondary)' } : {}}>
-                  {renderMessage(msg)}
-                  <div className={`flex items-center gap-1.5 mt-1 ${isMine ? 'justify-end' : ''}`}>
-                    <span className="text-[10px] text-on-surface-variant/60">{formatTime(msg.createdAt)}</span>
-                    {msg.isEdited && <span className="text-[10px] text-on-surface-variant/40">edited</span>}
-                    {isMine && (
-                      <span className={`material-symbols-outlined text-xs ${msg.seen?.length > 1 ? 'text-secondary' : 'text-on-surface-variant/40'}`}>
-                        {msg.seen?.length > 1 ? 'done_all' : 'done'}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Reactions */}
-                {msg.reactions?.length > 0 && (
-                  <div className="flex gap-1 mt-1 justify-end">
-                    {msg.reactions.map((r, i) => (
-                      <span key={i} className="text-xs bg-surface-container-high rounded-full px-1.5 py-0.5">{r.emoji}</span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          )
-        })}
-        <div ref={messagesEndRef} />
       </div>
+
+      {/* Scroll to bottom button with unread count */}
+      <ScrollToBottomButton
+        show={showScrollBottom}
+        unreadCount={unreadCountBelow}
+        onClick={() => scrollToBottom(true)}
+      />
 
       {/* Reply Preview */}
       {replyTo && (
-        <div className="px-4 py-2 bg-surface-container border-t border-outline-variant/20 flex items-center gap-3 animate-fade-up">
-          <div className="w-1 h-10 bg-secondary rounded-full flex-shrink-0" />
+        <div className="px-3 sm:px-4 py-2 bg-surface-container border-t border-outline-variant/20 flex items-center gap-3 animate-fade-up flex-shrink-0 z-20">
+          <div className="w-1 h-9 bg-secondary rounded-full flex-shrink-0" />
           <div className="flex-1 min-w-0">
             <p className="text-secondary text-xs font-semibold">
               Replying to {replyTo.senderId === userProfile?.id ? 'yourself' : otherUser?.displayName}
@@ -537,27 +502,44 @@ export default function ChatPage() {
                : replyTo.content}
             </p>
           </div>
-          <button onClick={() => setReplyTo(null)} className="p-1 hover:bg-surface-container-high rounded-lg">
-            <span className="material-symbols-outlined text-outline text-lg">close</span>
+          <button onClick={() => setReplyTo(null)} className="p-1 hover:bg-surface-container-high rounded-lg text-outline hover:text-on-surface">
+            <span className="material-symbols-outlined text-lg">close</span>
           </button>
         </div>
       )}
 
-      {/* GIF Picker — Task 3 */}
+      {/* GIF Picker */}
       {showGifPicker && (
-        <div className="bg-surface-container border-t border-outline-variant/20 overflow-hidden flex flex-col gif-picker-mobile animate-bottom-sheet" style={{maxHeight:'300px'}}>
-          <div className="flex items-center gap-2 px-3 py-2">
-            <input type="text" value={gifQuery} onChange={e => handleGifSearch(e.target.value)} placeholder="Search GIFs..." className="flex-1 bg-surface-container-high rounded-xl px-4 py-2 text-sm text-on-surface" autoFocus />
-            <button onClick={() => setShowGifPicker(false)} className="p-1.5 rounded-lg hover:bg-surface-container-high"><span className="material-symbols-outlined text-on-surface-variant text-lg">close</span></button>
+        <div className="bg-surface-container border-t border-outline-variant/20 overflow-hidden flex flex-col gif-picker-mobile animate-bottom-sheet flex-shrink-0 z-30" style={{maxHeight:'280px'}}>
+          <div className="flex items-center gap-2 px-3 py-2 border-b border-outline-variant/10">
+            <input
+              type="text"
+              value={gifQuery}
+              onChange={e => handleGifSearch(e.target.value)}
+              placeholder="Search GIFs..."
+              className="flex-1 bg-surface-container-high rounded-xl px-3 py-1.5 text-sm text-on-surface focus:outline-none"
+              autoFocus
+            />
+            <button onClick={() => setShowGifPicker(false)} className="p-1.5 rounded-lg hover:bg-surface-container-high">
+              <span className="material-symbols-outlined text-on-surface-variant text-lg">close</span>
+            </button>
           </div>
-          <div className="flex-1 overflow-y-auto px-2 pb-2">
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+          <div className="flex-1 overflow-y-auto px-2 py-2">
+            <div className="grid grid-cols-3 gap-2">
               {gifResults.map(gif => (
-                <button key={gif.id} onClick={() => handleGifSend(gif)} className="relative rounded-xl overflow-hidden hover:opacity-80 transition-opacity border border-outline-variant/10 active:scale-95" style={{aspectRatio:'4/3'}} title={gif.title}>
+                <button
+                  key={gif.id}
+                  onClick={() => handleGifSend(gif)}
+                  className="relative rounded-xl overflow-hidden hover:opacity-80 transition-opacity border border-outline-variant/10 active:scale-95"
+                  style={{aspectRatio:'4/3'}}
+                  title={gif.title}
+                >
                   <img src={gif.preview || gif.url} alt={gif.title} className="w-full h-full object-cover" loading="lazy" />
                 </button>
               ))}
-              {gifResults.length === 0 && <p className="col-span-2 md:col-span-3 text-center text-on-surface-variant text-sm py-8">No GIFs found</p>}
+              {gifResults.length === 0 && (
+                <p className="col-span-3 text-center text-on-surface-variant text-sm py-6">No GIFs found</p>
+              )}
             </div>
           </div>
         </div>
@@ -565,28 +547,29 @@ export default function ChatPage() {
 
       {/* Emoji Picker */}
       {showEmojiPicker && (
-        <div className="px-3 py-2 bg-surface-container border-t border-outline-variant/20 emoji-picker-mobile animate-bottom-sheet">
-          {/* Category tabs */}
-          <div className="emoji-tabs">
+        <div className="px-3 py-2 bg-surface-container border-t border-outline-variant/20 emoji-picker-mobile animate-bottom-sheet flex-shrink-0 z-30">
+          <div className="emoji-tabs flex items-center gap-1 overflow-x-auto pb-1 mb-2">
             {EMOJI_KEYS.map(key => (
               <button
                 key={key}
                 onClick={() => setEmojiCategory(key)}
-                className={`emoji-tab ${emojiCategory === key ? 'active' : ''}`}
+                className={`emoji-tab px-2 py-1 rounded-lg text-lg ${emojiCategory === key ? 'bg-secondary/20 text-secondary' : 'hover:bg-surface-container-high'}`}
               >
                 {key}
               </button>
             ))}
-            <button onClick={() => setShowEmojiPicker(false)} className="emoji-tab ml-auto" style={{fontSize: '14px'}}>
+            <button onClick={() => setShowEmojiPicker(false)} className="p-1 rounded-lg hover:bg-surface-container-high ml-auto">
               <span className="material-symbols-outlined text-on-surface-variant text-lg">close</span>
             </button>
           </div>
-          {/* Category label */}
           <p className="text-on-surface-variant text-xs font-medium mb-1.5 px-1">{EMOJI_CATEGORIES[emojiCategory].name}</p>
-          {/* Emoji grid */}
-          <div className="flex flex-wrap gap-1 max-h-48 overflow-y-auto pb-1">
+          <div className="flex flex-wrap gap-1 max-h-44 overflow-y-auto pb-1">
             {EMOJI_CATEGORIES[emojiCategory].emojis.map((em, i) => (
-              <button key={`${em}-${i}`} onClick={() => setText(prev => prev + em)} className="text-2xl hover:scale-125 transition-transform p-0.5 rounded">
+              <button
+                key={`${em}-${i}`}
+                onClick={() => setText(prev => prev + em)}
+                className="text-2xl hover:scale-125 transition-transform p-1 rounded"
+              >
                 {em}
               </button>
             ))}
@@ -594,126 +577,109 @@ export default function ChatPage() {
         </div>
       )}
 
-      {/* Audio Preview Bar — Task 1 */}
-      {recordState === 'preview' && audioPreviewRef.current && (() => {
-        const blobUrl = audioPreviewRef.current._blobUrl || (audioPreviewRef.current._blobUrl = URL.createObjectURL(audioPreviewRef.current))
-        return (
-        <div className="audio-preview-bar">
-          <button onClick={discardPreview} className="p-2 rounded-xl text-error hover:bg-error/10 active:scale-95 transition-all">
-            <span className="material-symbols-outlined text-xl">delete</span>
-          </button>
-          <audio controls src={blobUrl} className="flex-1 rounded-xl" style={{height:'36px'}} />
-          <button onClick={sendAudioPreview} className="p-2.5 rounded-xl bg-secondary text-on-secondary hover:scale-105 active:scale-95 transition-all shadow-lg shadow-secondary/30">
-            <span className="material-symbols-outlined text-xl">send</span>
-          </button>
-        </div>
-        )
-      })()}
-
-      {/* Input Bar — Task 1 recording state / Task 2 mobile layout */}
-      <div className="bg-surface-container-low border-t border-outline-variant/20 flex-shrink-0 chat-input-mobile">
+      {/* Composer — ONE row like WhatsApp with bottom safe-area */}
+      <div
+        className="bg-surface-container-low border-t border-outline-variant/20 flex-shrink-0 relative z-20"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+      >
         {recordState === 'recording' ? (
-          /* Recording active bar */
-          <div className="recording-bar">
+          <div className="flex items-center gap-2 px-3 py-2">
             <button onClick={cancelRecording} className="p-2 rounded-xl text-error hover:bg-error/10 active:scale-95 transition-all">
               <span className="material-symbols-outlined text-xl">close</span>
             </button>
-            <div className="recording-dot" />
-            <span className="recording-timer">{formatRecordTime(recordTime)}</span>
-            <span className="text-on-surface-variant text-sm flex-1">Recording...</span>
+            <div className="w-2.5 h-2.5 rounded-full bg-error animate-pulse" />
+            <span className="font-mono text-xs text-error font-semibold">{formatRecordTime(recordTime)}</span>
+            <span className="text-on-surface-variant text-xs flex-1 truncate">Recording audio...</span>
             <button onClick={stopRecordingForPreview} className="p-2.5 rounded-xl bg-secondary text-on-secondary hover:scale-105 active:scale-95 transition-all shadow-lg shadow-secondary/30">
               <span className="material-symbols-outlined text-xl">check</span>
             </button>
           </div>
-        ) : recordState === 'idle' ? (
-          /* Normal input — desktop: single row, mobile: input+send on top, toolbar below */
-          <div>
-            <div className="flex items-end gap-1.5 md:gap-2 px-3 md:px-4 py-2 md:py-3">
-              {/* Desktop-only: attach, emoji, gif before input */}
-              <div className="hidden md:flex items-center gap-0.5">
-                <div className="relative">
-                  <button onClick={() => setShowAttach(!showAttach)} className="p-2 rounded-xl text-on-surface-variant hover:text-secondary hover:bg-secondary/10 transition-all active:scale-95">
-                    <span className="material-symbols-outlined text-xl">add_circle</span>
-                  </button>
-                  {showAttach && (
-                    <div className="absolute bottom-12 left-0 glass-strong rounded-2xl p-2 w-48 shadow-2xl border border-outline-variant/20 animate-scale-in">
-                      {[{icon:'image',label:'Image',accept:'image/*'},{icon:'videocam',label:'Video',accept:'video/*'},{icon:'mic',label:'Audio',accept:'audio/*'},{icon:'description',label:'File',accept:'*'}].map(item => (
-                        <label key={item.label} className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors cursor-pointer">
-                          <span className="material-symbols-outlined text-lg">{item.icon}</span>{item.label}
-                          <input type="file" accept={item.accept} onChange={handleFileUpload} className="hidden" />
-                        </label>
-                      ))}
-                      <button onClick={shareLocation} className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors w-full">
-                        <span className="material-symbols-outlined text-lg">location_on</span>Location
-                      </button>
-                    </div>
-                  )}
-                </div>
-                <button onClick={() => { setShowEmojiPicker(!showEmojiPicker); setShowGifPicker(false) }} className="p-2 rounded-xl text-on-surface-variant hover:text-secondary hover:bg-secondary/10 transition-all active:scale-95">
-                  <span className="material-symbols-outlined text-xl">mood</span>
-                </button>
-                <button onClick={() => { setShowGifPicker(!showGifPicker); setShowEmojiPicker(false) }} className="p-2 rounded-xl text-on-surface-variant hover:text-secondary hover:bg-secondary/10 transition-all active:scale-95">
-                  <span className="material-symbols-outlined text-xl">gif_box</span>
-                </button>
-              </div>
-
-              {/* Text input — full width on mobile */}
-              <div className="flex-1 relative">
-                <textarea ref={inputRef} value={text} onChange={handleTextChange} onKeyDown={handleKeyDown} placeholder="Type a message..." rows={1}
-                  className="w-full bg-surface-container-high border border-outline-variant/30 rounded-2xl px-4 py-2.5 text-sm text-on-surface resize-none focus:border-secondary/50 focus:shadow-[0_0_0_2px_rgba(0,228,117,0.1)] transition-all max-h-24"
-                  style={{ minHeight: '44px' }} />
-              </div>
-
-              {/* Upload indicator */}
-              {uploading && (
-                <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-container-high border border-outline-variant/30 rounded-xl animate-pulse">
-                  <div className="w-4 h-4 border-2 border-secondary border-t-transparent rounded-full animate-spin flex-shrink-0" />
-                  <span className="text-xs font-medium text-secondary hidden md:inline">Uploading...</span>
-                </div>
-              )}
-
-              {/* Mic / Send — swap dynamically */}
-              {text.trim() ? (
-                <button onClick={handleSend} className="p-2.5 rounded-xl bg-secondary text-on-secondary hover:scale-105 active:scale-95 transition-transform shadow-lg shadow-secondary/30">
-                  <span className="material-symbols-outlined text-xl">send</span>
-                </button>
-              ) : (
-                <button onClick={startRecording} className="p-2.5 rounded-xl text-on-surface-variant hover:text-secondary hover:bg-secondary/10 transition-all active:scale-95">
-                  <span className="material-symbols-outlined text-xl">mic</span>
-                </button>
-              )}
-            </div>
-
-            {/* Mobile-only toolbar below input — Task 2 */}
-            <div className="md:hidden input-toolbar-mobile">
-              <div className="relative">
-                <button onClick={() => setShowAttach(!showAttach)} className="text-on-surface-variant hover:text-secondary">
-                  <span className="material-symbols-outlined">add_circle</span>
-                </button>
-                {showAttach && (
-                  <div className="absolute bottom-10 left-0 glass-strong rounded-2xl p-2 w-48 shadow-2xl border border-outline-variant/20 animate-scale-in z-50">
-                    {[{icon:'image',label:'Image',accept:'image/*'},{icon:'videocam',label:'Video',accept:'video/*'},{icon:'mic',label:'Audio',accept:'audio/*'},{icon:'description',label:'File',accept:'*'}].map(item => (
-                      <label key={item.label} className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors cursor-pointer">
-                        <span className="material-symbols-outlined text-lg">{item.icon}</span>{item.label}
-                        <input type="file" accept={item.accept} onChange={handleFileUpload} className="hidden" />
-                      </label>
-                    ))}
-                    <button onClick={shareLocation} className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors w-full">
-                      <span className="material-symbols-outlined text-lg">location_on</span>Location
-                    </button>
-                  </div>
-                )}
-              </div>
-              <button onClick={() => { setShowEmojiPicker(!showEmojiPicker); setShowGifPicker(false) }} className="text-on-surface-variant hover:text-secondary">
-                <span className="material-symbols-outlined">mood</span>
-              </button>
-              <button onClick={() => { setShowGifPicker(!showGifPicker); setShowEmojiPicker(false) }} className="text-on-surface-variant hover:text-secondary">
-                <span className="material-symbols-outlined">gif_box</span>
-              </button>
-            </div>
+        ) : recordState === 'preview' && audioPreviewRef.current ? (
+          <div className="flex items-center gap-2 px-3 py-2 bg-surface-container">
+            <button onClick={discardPreview} className="p-2 rounded-xl text-error hover:bg-error/10 active:scale-95 transition-all">
+              <span className="material-symbols-outlined text-xl">delete</span>
+            </button>
+            <audio controls src={audioPreviewRef.current._blobUrl || (audioPreviewRef.current._blobUrl = URL.createObjectURL(audioPreviewRef.current))} className="flex-1 h-9 rounded-xl" />
+            <button onClick={sendAudioPreview} className="p-2.5 rounded-xl bg-secondary text-on-secondary hover:scale-105 active:scale-95 transition-all shadow-lg shadow-secondary/30">
+              <span className="material-symbols-outlined text-xl">send</span>
+            </button>
           </div>
-        ) : null}
+        ) : (
+          <div className="flex items-end gap-1.5 px-2.5 py-2">
+            {/* Emoji toggle */}
+            <button
+              type="button"
+              onClick={() => { setShowEmojiPicker(!showEmojiPicker); setShowGifPicker(false) }}
+              className="p-2 rounded-xl text-on-surface-variant hover:text-secondary hover:bg-surface-container-high transition-colors active:scale-95 flex-shrink-0"
+              aria-label="Emoji picker"
+            >
+              <span className="material-symbols-outlined text-xl">mood</span>
+            </button>
+
+            {/* Auto-growing textarea up to 5 lines */}
+            <div className="flex-1 min-w-0 relative">
+              <textarea
+                ref={inputRef}
+                value={text}
+                onChange={handleTextChange}
+                onKeyDown={handleKeyDown}
+                placeholder="Message"
+                rows={1}
+                className="w-full bg-surface-container-high border border-outline-variant/30 rounded-2xl px-3.5 py-2 text-sm text-on-surface resize-none focus:border-secondary/50 focus:outline-none transition-all break-anywhere leading-5"
+                style={{ minHeight: '38px', maxHeight: '128px' }}
+              />
+            </div>
+
+            {/* Attach button */}
+            <button
+              type="button"
+              onClick={() => setShowAttach(true)}
+              className="p-2 rounded-xl text-on-surface-variant hover:text-secondary hover:bg-surface-container-high transition-colors active:scale-95 flex-shrink-0"
+              aria-label="Attach file"
+            >
+              <span className="material-symbols-outlined text-xl">attach_file</span>
+            </button>
+
+            {/* Send or Mic */}
+            {text.trim() ? (
+              <button
+                type="button"
+                onClick={handleSend}
+                className="p-2.5 rounded-xl bg-secondary text-on-secondary hover:scale-105 active:scale-95 transition-transform shadow-lg shadow-secondary/30 flex-shrink-0"
+                aria-label="Send message"
+              >
+                <span className="material-symbols-outlined text-xl">send</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={startRecording}
+                className="p-2.5 rounded-xl text-on-surface-variant hover:text-secondary hover:bg-surface-container-high transition-colors active:scale-95 flex-shrink-0"
+                aria-label="Record voice message"
+              >
+                <span className="material-symbols-outlined text-xl">mic</span>
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Uploading indicator */}
+        {uploading && (
+          <div className="px-3 py-1 bg-surface-container flex items-center gap-2 border-t border-outline-variant/10 text-xs text-secondary animate-pulse">
+            <div className="w-3 h-3 border-2 border-secondary border-t-transparent rounded-full animate-spin flex-shrink-0" />
+            <span>Uploading media...</span>
+          </div>
+        )}
       </div>
+
+      {/* Attach Bottom Sheet */}
+      <AttachBottomSheet
+        isOpen={showAttach}
+        onClose={() => setShowAttach(false)}
+        onSelectFile={handleFileUpload}
+        onShareLocation={shareLocation}
+        onOpenGif={() => setShowGifPicker(true)}
+      />
 
       {/* Context Menu */}
       {contextMenu && (
@@ -776,6 +742,13 @@ export default function ChatPage() {
           </div>
         </div>
       )}
+
+      {/* Fullscreen Media Viewer Modal */}
+      <MediaViewerModal
+        isOpen={!!activeMedia}
+        media={activeMedia}
+        onClose={() => setActiveMedia(null)}
+      />
 
     </div>
   )

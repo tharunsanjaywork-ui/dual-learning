@@ -22,10 +22,24 @@ const FILTERS = ['All Topics', 'Mathematics', 'Chemistry', 'Biology', 'Physics']
 
 export default function NotesPage() {
   const [activeFilter, setActiveFilter] = useState('All Topics')
+  const [downloading, setDownloading] = useState(null)
   const filtered = activeFilter === 'All Topics' ? NOTES : NOTES.filter(n => n.topic === activeFilter)
 
+  const handleDownload = (item) => {
+    setDownloading(item.title)
+    const content = `FOCUS SANCTUARY — STUDY REVISION NOTES\n\nTitle: ${item.title}\nSubject: ${item.topic || item.subject}\n\nSummary:\n${item.desc || 'Comprehensive revision sheet covering key concepts, standard formulas and derivation steps.'}\n\nKey Concepts:\n1. Core definitions and fundamental postulates.\n2. Dimensional analysis, units and equations.\n3. Standard practice techniques and past year questions.\n\nFocus Sanctuary • Study Sanctuary`
+    const blob = new Blob([content], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${item.title.replace(/\s+/g, '_')}_Notes.txt`
+    a.click()
+    URL.revokeObjectURL(url)
+    setTimeout(() => setDownloading(null), 1000)
+  }
+
   return (
-    <div className="px-4 md:px-8 lg:px-16 py-8">
+    <div className="px-4 md:px-8 lg:px-16 py-8 animate-page-enter">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
         <h1 className="font-headline text-3xl md:text-5xl font-bold text-on-surface">Study Notes</h1>
@@ -36,7 +50,7 @@ export default function NotesPage() {
               onClick={() => setActiveFilter(f)}
               className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all ${
                 activeFilter === f
-                  ? 'bg-primary text-on-primary'
+                  ? 'bg-primary text-on-primary shadow-sm'
                   : 'bg-surface-container-highest text-on-surface-variant hover:bg-surface-bright'
               }`}
             >
@@ -60,8 +74,15 @@ export default function NotesPage() {
             <p className="text-on-surface-variant text-sm mb-4 line-clamp-2">{note.desc}</p>
             <div className="flex items-center justify-between">
               <span className="text-outline text-xs">{note.size}</span>
-              <button className="flex items-center gap-1.5 text-primary text-sm font-medium border border-primary/30 rounded-full px-4 py-1.5 hover:bg-primary/10 transition-colors">
-                <span className="material-symbols-outlined text-sm">download</span>Download PDF
+              <button
+                type="button"
+                onClick={() => handleDownload(note)}
+                className="flex items-center gap-1.5 text-primary text-sm font-medium border border-primary/30 rounded-full px-4 py-1.5 hover:bg-primary/10 transition-colors active:scale-95 cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-sm">
+                  {downloading === note.title ? 'check' : 'download'}
+                </span>
+                <span>{downloading === note.title ? 'Saved' : 'Download Note'}</span>
               </button>
             </div>
           </div>
@@ -80,7 +101,12 @@ export default function NotesPage() {
               <h4 className="text-on-surface font-medium text-sm truncate">{sheet.title}</h4>
               <p className="text-on-surface-variant text-xs">{sheet.pages} pages • {sheet.subject}</p>
             </div>
-            <button className="flex items-center gap-1 bg-secondary text-on-secondary px-3 py-2 rounded-full text-xs font-bold hover:scale-105 transition-transform flex-shrink-0">
+            <button
+              type="button"
+              onClick={() => handleDownload(sheet)}
+              className="flex items-center gap-1 bg-secondary text-on-secondary px-3.5 py-2 rounded-full text-xs font-bold hover:scale-105 active:scale-95 transition-transform flex-shrink-0 cursor-pointer shadow-md shadow-secondary/20"
+              aria-label="Download sheet"
+            >
               <span className="material-symbols-outlined text-sm">download</span>
             </button>
           </div>

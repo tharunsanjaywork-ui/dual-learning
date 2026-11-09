@@ -35,13 +35,9 @@ export default function StudyLayout() {
     navigate('/login', { replace: true })
   }
 
-  // Switch button: if not logged in, go to login. If logged in, show auth modal.
+  // Switch button: opens full-screen study chatbot gateway
   const handleSwitch = () => {
-    if (!user) {
-      navigate('/login')
-      return
-    }
-    setSwitchOpen(true)
+    navigate('/study/chatbot')
   }
 
   return (
@@ -90,16 +86,16 @@ export default function StudyLayout() {
             />
           </div>
 
-          {/* Switch Button */}
+          {/* Chatbot Gateway Button */}
           {!cameFromNotification && (
           <button
             onClick={handleSwitch}
-            className="relative flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-primary/20 to-secondary/20 border border-primary/30 hover:from-primary/30 hover:to-secondary/30 transition-all duration-300 text-on-surface group"
-            title="Switch Mode"
+            className="relative flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-primary/10 border border-primary/30 hover:bg-primary/20 transition-all text-on-surface group"
+            title="AI Study Assistant"
           >
-            <span className="text-xl group-hover:rotate-180 transition-transform duration-500">🤖</span>
+            <span className="text-xl group-hover:scale-110 transition-transform duration-300">🤖</span>
             <span className="hidden xl:inline text-sm font-medium text-on-surface">Chatbot</span>
-            <span className="w-2 h-2 rounded-full bg-secondary animate-pulse absolute -top-0.5 -right-0.5" />
+            <span className="w-2 h-2 rounded-full bg-primary/70 animate-pulse absolute -top-0.5 -right-0.5" />
           </button>
           )}
 
@@ -163,16 +159,16 @@ export default function StudyLayout() {
           <span className="font-headline text-sm font-bold text-on-surface">Focus Sanctuary</span>
         </NavLink>
         <div className="flex-1" />
-        {/* Mobile Switch Button */}
+        {/* Mobile Chatbot Button */}
         {!cameFromNotification && (
         <button
           onClick={handleSwitch}
-          className="relative flex flex-col items-center gap-1 px-4 py-2 text-primary"
-          title="Switch Mode"
+          className="relative flex flex-col items-center gap-0.5 px-3 py-1.5 text-primary"
+          title="AI Study Assistant"
         >
-          <span className="text-2xl">🤖</span>
-          <span className="text-xs font-medium">Chatbot</span>
-          <span className="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse absolute top-1 right-2" />
+          <span className="text-xl">🤖</span>
+          <span className="text-[10px] font-medium">Chatbot</span>
+          <span className="w-1.5 h-1.5 rounded-full bg-primary/70 animate-pulse absolute top-1 right-2" />
         </button>
         )}
         {/* Mobile Avatar / Sign In */}

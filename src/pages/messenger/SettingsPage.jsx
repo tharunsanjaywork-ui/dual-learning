@@ -63,7 +63,10 @@ export default function SettingsPage() {
   const { logout, userProfile } = useAuth()
   const wallpaperInputRef = useRef(null)
   const [wallpaperUploading, setWallpaperUploading] = useState(false)
-  const [currentWallpaper, setCurrentWallpaper] = useState(() => localStorage.getItem('dz_chat_wallpaper') || '')
+  const [currentWallpaper, setCurrentWallpaper] = useState(() => {
+    const wp = localStorage.getItem('dz_chat_wallpaper')
+    return wp && typeof wp === 'string' && wp.startsWith('http') ? wp : ''
+  })
 
   const [toggles, setToggles] = useState(() => {
     try {
@@ -117,10 +120,11 @@ export default function SettingsPage() {
     if (!file) return
     setWallpaperUploading(true)
     try {
-      const url = await uploadToCloudinary(file)
-      if (url) {
-        localStorage.setItem('dz_chat_wallpaper', url)
-        setCurrentWallpaper(url)
+      const result = await uploadToCloudinary(file, 'image', 'wallpapers')
+      const wallpaperUrl = result?.secure_url || (typeof result === 'string' ? result : '')
+      if (wallpaperUrl) {
+        localStorage.setItem('dz_chat_wallpaper', wallpaperUrl)
+        setCurrentWallpaper(wallpaperUrl)
       }
     } catch (err) {
       console.error('Wallpaper upload failed:', err)

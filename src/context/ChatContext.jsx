@@ -3,6 +3,7 @@ import {
   primaryDb, secondaryDb,
   getMessagesDb, getMessagesDbName,
   checkAndSwitchMessagesDb, trackFirestoreWrite,
+  trackMessageStorageChange,
 } from '../lib/firebase'
 import {
   collection, query, where, orderBy, onSnapshot, addDoc, updateDoc, deleteDoc,
@@ -122,6 +123,13 @@ export function ChatProvider({ children }) {
     const unsub = onSnapshot(q, (snap) => {
       if (isFirstLoad) { isFirstLoad = false; return }
       if (snap.empty) return
+
+      // Ignore ringing call docs older than 60 seconds
+      const callData = snap.docs[0].data()
+      const createdMs = callData.createdAt?.toMillis
+        ? callData.createdAt.toMillis()
+        : (callData.createdAt?.seconds ? callData.createdAt.seconds * 1000 : (typeof callData.createdAt === 'number' ? callData.createdAt : 0))
+      if (createdMs > 0 && Date.now() - createdMs > 60000) return
       
       if (Notification.permission === 'granted') {
         try {
@@ -334,9 +342,16 @@ export function ChatProvider({ children }) {
       msgData
     )
 
-    // Track estimated size for storage monitoring
+    // Track estimated size centrally in system/storageStats and storageByUser/{uid}
     const estimatedSize = JSON.stringify(msgData).length + 200
-    trackFirestoreWrite(estimatedSize)
+    const isSecondary = getMessagesDbName() === 'secondary'
+    await trackMessageStorageChange(
+      estimatedSize,
+      isSecondary,
+      userProfile.id,
+      true,
+      { displayName: userProfile.displayName, username: userProfile.username }
+    )
 
     // Always update chat metadata in PRIMARY db
     await setDoc(
@@ -427,13 +442,17 @@ export function ChatProvider({ children }) {
     }
   }, [userProfile?.id])
 
-  // Delete message — try both dbs
+  // Delete message — try both dbs & decrement central + per-user storage
   const deleteMessage = useCallback(async (chatId, messageId, forEveryone = false) => {
     const tryDb = async (dbRef) => {
       try {
         const msgRef = doc(dbRef, 'messages', chatId, 'msgs', messageId)
         const msgDoc = await getDoc(msgRef)
         if (!msgDoc.exists()) return false
+
+        const originalData = msgDoc.data()
+        const freedBytes = JSON.stringify(originalData).length + 150
+
         if (forEveryone) {
           await updateDoc(msgRef, {
             isDeleted: true,
@@ -445,6 +464,15 @@ export function ChatProvider({ children }) {
             [`deletedFor.${userProfile?.id}`]: true,
           })
         }
+
+        // Decrement centrally and per-user
+        await trackMessageStorageChange(
+          -freedBytes,
+          dbRef === secondaryDb,
+          userProfile?.id,
+          false,
+          { displayName: userProfile?.displayName, username: userProfile?.username }
+        )
         return true
       } catch { return false }
     }
@@ -452,7 +480,7 @@ export function ChatProvider({ children }) {
     if (!(await tryDb(primaryDb))) {
       await tryDb(secondaryDb)
     }
-  }, [userProfile?.id])
+  }, [userProfile?.id, userProfile?.displayName, userProfile?.username])
 
   // Edit message — try both dbs
   const editMessage = useCallback(async (chatId, messageId, newContent) => {

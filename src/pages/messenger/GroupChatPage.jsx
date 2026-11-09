@@ -1,11 +1,14 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback, Fragment } from 'react'
 import { isUserOnline } from '../../utils/storage'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useChat } from '../../context/ChatContext'
 import { useAuth } from '../../context/AuthContext'
 import { db } from '../../lib/firebase'
-import { doc, getDoc, getDocs, updateDoc, onSnapshot, collection, query, where, orderBy, limit, addDoc, serverTimestamp, arrayUnion, arrayRemove, setDoc } from 'firebase/firestore'
-import { uploadToCloudinary, getFileType } from '../../lib/cloudinary'
+import { doc, getDoc, getDocs, updateDoc, onSnapshot, collection, query, where, orderBy, limit, addDoc, serverTimestamp, arrayUnion, arrayRemove } from 'firebase/firestore'
+import DateSeparator from '../../components/chat/DateSeparator'
+import ScrollToBottomButton from '../../components/chat/ScrollToBottomButton'
+import MessageBubble from '../../components/chat/MessageBubble'
+import MediaViewerModal from '../../components/chat/MediaViewerModal'
 
 export default function GroupChatPage() {
   const { groupId } = useParams()
@@ -19,7 +22,34 @@ export default function GroupChatPage() {
   const [messages, setMessages] = useState([])
   const [loading, setLoading] = useState(true)
   const [addMemberInput, setAddMemberInput] = useState('')
-  const messagesEndRef = useRef(null)
+  const [activeMedia, setActiveMedia] = useState(null)
+
+  const listRef = useRef(null)
+  const inputRef = useRef(null)
+  const isNearBottomRef = useRef(true)
+  const [showScrollBottom, setShowScrollBottom] = useState(false)
+  const [unreadCountBelow, setUnreadCountBelow] = useState(0)
+
+  const handleScroll = () => {
+    if (!listRef.current) return
+    const { scrollTop, scrollHeight, clientHeight } = listRef.current
+    const distance = scrollHeight - scrollTop - clientHeight
+    const near = distance < 120
+    isNearBottomRef.current = near
+    setShowScrollBottom(!near)
+    if (near) setUnreadCountBelow(0)
+  }
+
+  const scrollToBottom = useCallback((smooth = true) => {
+    if (!listRef.current) return
+    listRef.current.scrollTo({
+      top: listRef.current.scrollHeight,
+      behavior: smooth ? 'smooth' : 'auto'
+    })
+    setUnreadCountBelow(0)
+    setShowScrollBottom(false)
+    isNearBottomRef.current = true
+  }, [])
 
   // Fetch group data
   useEffect(() => {
@@ -53,7 +83,30 @@ export default function GroupChatPage() {
     return unsub
   }, [groupId])
 
-  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
+  // Auto-scroll on new messages only if already near bottom
+  useEffect(() => {
+    if (messages.length === 0) return
+    if (isNearBottomRef.current) {
+      scrollToBottom(true)
+    } else {
+      setUnreadCountBelow(c => c + 1)
+    }
+  }, [messages, scrollToBottom])
+
+  // Scroll to bottom on initial load / group change
+  useEffect(() => {
+    if (messages.length > 0) {
+      setTimeout(() => scrollToBottom(false), 50)
+    }
+  }, [groupId, scrollToBottom])
+
+  // Auto-resize textarea up to 5 lines (~128px)
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.style.height = 'auto'
+      inputRef.current.style.height = `${Math.min(inputRef.current.scrollHeight, 128)}px`
+    }
+  }, [text])
 
   const handleSend = async () => {
     const trimmed = text.trim()
@@ -64,6 +117,7 @@ export default function GroupChatPage() {
     })
     await updateDoc(doc(db, 'groups', groupId), { lastMessage: trimmed, lastMessageAt: serverTimestamp() }).catch(() => {})
     setText('')
+    inputRef.current?.focus()
   }
 
   const handleRemoveMember = async (uid) => {
@@ -108,122 +162,211 @@ export default function GroupChatPage() {
   const isAdmin = group.admins?.includes(userProfile?.id)
 
   return (
-    <div className="flex h-[calc(100vh-3.5rem)] md:h-[calc(100vh-4rem)] animate-page-enter">
+    <div className="flex-1 flex flex-col min-h-0 h-full overflow-hidden relative animate-page-enter">
       {/* Chat Area */}
-      <div className="flex-1 flex flex-col">
-        {/* Top Bar */}
-        <div className="flex items-center gap-2 px-3 py-2 bg-surface-container-low/80 backdrop-blur-xl border-b border-outline-variant/20 flex-shrink-0">
-          <button onClick={() => navigate('/messenger/chats')} className="p-1.5 -ml-1">
-            <span className="material-symbols-outlined text-on-surface-variant">arrow_back</span>
+      <div className="flex-1 flex flex-col min-h-0 h-full overflow-hidden relative">
+        {/* Top Bar — shrink-0 and always visible */}
+        <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 bg-surface-container-low/90 backdrop-blur-xl border-b border-outline-variant/20 flex-shrink-0 z-20">
+          <button
+            onClick={() => navigate('/messenger/chats')}
+            className="p-1.5 -ml-1 rounded-xl text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors"
+            aria-label="Back to chats"
+          >
+            <span className="material-symbols-outlined text-xl">arrow_back</span>
           </button>
-          <div className="w-10 h-10 rounded-full gradient-secondary flex items-center justify-center text-lg">{group.icon || '📚'}</div>
+          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full gradient-secondary flex items-center justify-center text-lg flex-shrink-0">
+            {group.icon || '📚'}
+          </div>
           <div className="flex-1 min-w-0">
-            <button onClick={() => setShowInfo(!showInfo)} className="text-left">
-              <h3 className="text-on-surface font-medium text-sm truncate max-w-[120px] md:max-w-none">{group.name || 'Group'}</h3>
-              <p className="text-secondary text-xs">{members.length} members</p>
+            <button onClick={() => setShowInfo(!showInfo)} className="text-left w-full">
+              <h3 className="text-on-surface font-medium text-sm truncate leading-tight">{group.name || 'Group'}</h3>
+              <p className="text-secondary text-xs truncate leading-tight mt-0.5">{members.length} members</p>
             </button>
           </div>
-          <button onClick={() => setShowInfo(!showInfo)} className="p-2 rounded-xl text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-all">
+          <button
+            onClick={() => setShowInfo(!showInfo)}
+            className="p-2 rounded-xl text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors flex-shrink-0"
+            aria-label="Group info"
+          >
             <span className="material-symbols-outlined text-xl">info</span>
           </button>
         </div>
 
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-2">
+        {/* Messages Scroll Area — ONLY scrollable area */}
+        <div
+          ref={listRef}
+          onScroll={handleScroll}
+          className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-3 sm:px-4 py-3 space-y-2 overscroll-contain relative"
+        >
           {messages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-center">
-              <div className="w-16 h-16 rounded-full gradient-secondary flex items-center justify-center text-2xl mb-4">{group.icon || '📚'}</div>
+            <div className="flex flex-col items-center justify-center h-full text-center py-12">
+              <div className="w-16 h-16 rounded-full gradient-secondary flex items-center justify-center text-2xl mb-4">
+                {group.icon || '📚'}
+              </div>
               <h3 className="font-headline text-lg font-bold text-on-surface mb-1">{group.name}</h3>
               <p className="text-on-surface-variant text-sm mb-2">{group.description || ''}</p>
               <p className="text-outline text-xs">{members.length} members</p>
             </div>
-          ) : messages.map(msg => {
-            const isMine = msg.senderId === userProfile?.id
-            const sender = members.find(m => m.id === msg.senderId)
-            return (
-              <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[75%] md:max-w-[60%]`}>
-                  {!isMine && <p className="text-xs text-secondary font-medium mb-0.5 ml-1">{sender?.displayName || 'Unknown'}</p>}
-                  <div className={`rounded-2xl px-4 py-2.5 ${isMine ? 'bg-secondary-container/30 border border-secondary/10 rounded-br-md' : 'bg-surface-container-high rounded-bl-md'}`}>
-                    {msg.isDeleted ? <p className="text-on-surface-variant text-sm italic">Deleted</p> : <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{msg.content}</p>}
-                    <span className="text-[10px] text-on-surface-variant/60 block mt-1">{formatTime(msg.createdAt)}</span>
-                  </div>
-                </div>
-              </div>
-            )
-          })}
-          <div ref={messagesEndRef} />
+          ) : (
+            messages.map((msg, idx) => {
+              const isMine = msg.senderId === userProfile?.id
+              const sender = members.find(m => m.id === msg.senderId)
+              const prevMsg = idx > 0 ? messages[idx - 1] : null
+              const isNewDay = !prevMsg || (() => {
+                const d1 = msg.createdAt?.toDate ? msg.createdAt.toDate() : new Date(msg.createdAt || Date.now())
+                const d2 = prevMsg.createdAt?.toDate ? prevMsg.createdAt.toDate() : new Date(prevMsg.createdAt || Date.now())
+                return d1.toDateString() !== d2.toDateString()
+              })()
+
+              return (
+                <Fragment key={msg.id}>
+                  {isNewDay && <DateSeparator date={msg.createdAt} />}
+                  <MessageBubble
+                    msg={msg}
+                    isMine={isMine}
+                    senderName={sender?.displayName}
+                    onOpenMedia={setActiveMedia}
+                  />
+                </Fragment>
+              )
+            })
+          )}
         </div>
 
-        {/* Input */}
-        <div className="px-4 py-3 bg-surface-container-low border-t border-outline-variant/20 flex items-end gap-2 flex-shrink-0">
-          <div className="flex-1">
-            <textarea value={text} onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }} placeholder="Type a message..." rows={1}
-              className="w-full bg-surface-container-high border border-outline-variant/30 rounded-2xl px-4 py-2.5 text-sm text-on-surface resize-none focus:border-secondary/50 transition-all" style={{ minHeight: '40px' }} />
+        {/* Scroll to bottom button */}
+        <ScrollToBottomButton
+          show={showScrollBottom}
+          unreadCount={unreadCountBelow}
+          onClick={() => scrollToBottom(true)}
+        />
+
+        {/* Input Bar — ONE row like WhatsApp with bottom safe-area */}
+        <div
+          className="bg-surface-container-low border-t border-outline-variant/20 flex-shrink-0 relative z-20"
+          style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+        >
+          <div className="flex items-end gap-1.5 px-2.5 py-2">
+            <div className="flex-1 min-w-0 relative">
+              <textarea
+                ref={inputRef}
+                value={text}
+                onChange={e => setText(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    handleSend()
+                  }
+                }}
+                placeholder="Message"
+                rows={1}
+                className="w-full bg-surface-container-high border border-outline-variant/30 rounded-2xl px-3.5 py-2 text-sm text-on-surface resize-none focus:border-secondary/50 focus:outline-none transition-all break-anywhere leading-5"
+                style={{ minHeight: '38px', maxHeight: '128px' }}
+              />
+            </div>
+            <button
+              onClick={handleSend}
+              disabled={!text.trim()}
+              className="p-2.5 rounded-xl bg-secondary text-on-secondary shadow-lg shadow-secondary/30 disabled:opacity-30 flex-shrink-0 transition-transform active:scale-95"
+              aria-label="Send message"
+            >
+              <span className="material-symbols-outlined text-xl">send</span>
+            </button>
           </div>
-          <button onClick={handleSend} disabled={!text.trim()} className="p-2.5 rounded-xl bg-secondary text-on-secondary shadow-lg shadow-secondary/30 disabled:opacity-30">
-            <span className="material-symbols-outlined text-xl">send</span>
-          </button>
         </div>
       </div>
 
       {/* Group Info Panel — slide-in drawer on mobile */}
       {showInfo && (
         <>
-        <div className="fixed inset-0 bg-black/40 z-30 md:hidden" onClick={() => setShowInfo(false)} />
-        <div className="fixed inset-y-0 right-0 w-80 z-40 md:relative md:inset-auto md:z-auto border-l border-outline-variant/20 bg-surface-container-low overflow-y-auto transition-transform duration-300 animate-fade-up">
-          <div className="p-6">
-            <div className="flex flex-col items-center mb-6">
-              <div className="w-20 h-20 rounded-full gradient-secondary flex items-center justify-center text-3xl mb-3">{group.icon || '📚'}</div>
-              <h3 className="font-headline text-lg font-bold text-on-surface">{group.name}</h3>
-              <p className="text-on-surface-variant text-sm text-center mt-1">{group.description || ''}</p>
-            </div>
+          <div className="fixed inset-0 bg-black/40 z-30 md:hidden" onClick={() => setShowInfo(false)} />
+          <div className="fixed inset-y-0 right-0 w-80 z-40 md:relative md:inset-auto md:z-auto border-l border-outline-variant/20 bg-surface-container-low overflow-y-auto transition-transform duration-300 animate-fade-up">
+            <div className="p-6">
+              <div className="flex flex-col items-center mb-6">
+                <div className="w-20 h-20 rounded-full gradient-secondary flex items-center justify-center text-3xl mb-3">
+                  {group.icon || '📚'}
+                </div>
+                <h3 className="font-headline text-lg font-bold text-on-surface">{group.name}</h3>
+                <p className="text-on-surface-variant text-sm text-center mt-1">{group.description || ''}</p>
+              </div>
 
-            {/* Quick Actions */}
-            <div className="grid grid-cols-2 gap-3 mb-6">
-              {isAdmin && (
-                <button onClick={() => { const name = prompt('Add member username:'); if (name) handleAddMember(name) }} className="bg-surface-container rounded-xl p-3 text-center hover:bg-surface-container-high transition-colors">
-                  <span className="material-symbols-outlined text-secondary text-xl block mb-1">person_add</span>
-                  <span className="text-on-surface-variant text-xs">Add Member</span>
+              {/* Quick Actions */}
+              <div className="grid grid-cols-2 gap-3 mb-6">
+                {isAdmin && (
+                  <button
+                    onClick={() => { const name = prompt('Add member username:'); if (name) handleAddMember(name) }}
+                    className="bg-surface-container rounded-xl p-3 text-center hover:bg-surface-container-high transition-colors"
+                  >
+                    <span className="material-symbols-outlined text-secondary text-xl block mb-1">person_add</span>
+                    <span className="text-on-surface-variant text-xs">Add Member</span>
+                  </button>
+                )}
+                <button
+                  onClick={generateInviteLink}
+                  className="bg-surface-container rounded-xl p-3 text-center hover:bg-surface-container-high transition-colors"
+                >
+                  <span className="material-symbols-outlined text-secondary text-xl block mb-1">link</span>
+                  <span className="text-on-surface-variant text-xs">Invite Link</span>
                 </button>
-              )}
-              <button onClick={generateInviteLink} className="bg-surface-container rounded-xl p-3 text-center hover:bg-surface-container-high transition-colors">
-                <span className="material-symbols-outlined text-secondary text-xl block mb-1">link</span>
-                <span className="text-on-surface-variant text-xs">Invite Link</span>
+              </div>
+
+              {/* Members */}
+              <h4 className="text-on-surface-variant text-xs font-medium uppercase tracking-wider mb-3">
+                Members ({members.length})
+              </h4>
+              <div className="space-y-2">
+                {members.map(member => (
+                  <div key={member.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-surface-container transition-colors">
+                    <div className="relative">
+                      <div className="w-9 h-9 rounded-full overflow-hidden bg-surface-container-highest flex items-center justify-center">
+                        {member.profilePic ? (
+                          <img src={member.profilePic} className="w-full h-full object-cover" />
+                        ) : (
+                          <span className="material-symbols-outlined text-outline text-base">person</span>
+                        )}
+                      </div>
+                      {isUserOnline(member) && (
+                        <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-secondary rounded-full border-2 border-surface-container-low" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-on-surface text-sm font-medium truncate">{member.displayName}</p>
+                    </div>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                      member.role === 'Admin'
+                        ? 'bg-primary/10 text-primary border border-primary/30'
+                        : 'bg-surface-container-highest text-on-surface-variant'
+                    }`}>
+                      {member.role}
+                    </span>
+                    {isAdmin && member.id !== userProfile?.id && (
+                      <button
+                        onClick={() => handleRemoveMember(member.id)}
+                        className="p-1 rounded-lg hover:bg-error/10 text-outline hover:text-error transition-colors"
+                      >
+                        <span className="material-symbols-outlined text-sm">close</span>
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <button
+                onClick={handleLeave}
+                className="w-full mt-8 flex items-center justify-center gap-2 bg-error/10 text-error rounded-xl py-3 font-medium text-sm hover:bg-error/20 transition-colors"
+              >
+                <span className="material-symbols-outlined text-lg">logout</span>Leave Group
               </button>
             </div>
-
-            {/* Members */}
-            <h4 className="text-on-surface-variant text-xs font-medium uppercase tracking-wider mb-3">Members ({members.length})</h4>
-            <div className="space-y-2">
-              {members.map(member => (
-                <div key={member.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-surface-container transition-colors">
-                  <div className="relative">
-                    <div className="w-9 h-9 rounded-full overflow-hidden bg-surface-container-highest flex items-center justify-center">
-                      {member.profilePic ? <img src={member.profilePic} className="w-full h-full object-cover" /> : <span className="material-symbols-outlined text-outline text-base">person</span>}
-                    </div>
-                    {isUserOnline(member) && <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-secondary rounded-full border-2 border-surface-container-low" />}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-on-surface text-sm font-medium truncate">{member.displayName}</p>
-                  </div>
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${member.role === 'Admin' ? 'bg-primary/10 text-primary border border-primary/30' : 'bg-surface-container-highest text-on-surface-variant'}`}>{member.role}</span>
-                  {isAdmin && member.id !== userProfile?.id && (
-                    <button onClick={() => handleRemoveMember(member.id)} className="p-1 rounded-lg hover:bg-error/10 text-outline hover:text-error transition-colors">
-                      <span className="material-symbols-outlined text-sm">close</span>
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-
-            <button onClick={handleLeave} className="w-full mt-8 flex items-center justify-center gap-2 bg-error/10 text-error rounded-xl py-3 font-medium text-sm hover:bg-error/20 transition-colors">
-              <span className="material-symbols-outlined text-lg">logout</span>Leave Group
-            </button>
           </div>
-        </div>
         </>
       )}
+
+      {/* Fullscreen Media Viewer Modal */}
+      <MediaViewerModal
+        isOpen={!!activeMedia}
+        media={activeMedia}
+        onClose={() => setActiveMedia(null)}
+      />
     </div>
   )
 }

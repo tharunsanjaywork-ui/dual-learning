@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { storage } from '../../utils/storage'
 import { getAllVideos, getThumbnail } from '../../data/videos'
@@ -10,14 +10,16 @@ const QUICK_ACCESS = [
   { to: '/study/jee-mains', label: 'JEE Mains', desc: 'Complete JEE Mains preparation with video lectures', icon: 'architecture', color: '#3b82f6' },
   { to: '/study/jee-advanced', label: 'JEE Advanced', desc: 'Advanced problem solving for IIT aspirants', icon: 'rocket_launch', color: '#a68cff' },
   { to: '/study/neet', label: 'NEET', desc: 'Biology, Physics & Chemistry for medical entrance', icon: 'medical_services', color: '#00e475' },
+  { to: '/study/ca', label: 'CA Foundation', desc: 'Chartered Accountancy, Mercantile Law & Financials', icon: 'account_balance', color: '#f59e0b' },
 ]
 
 export default function StudyHome() {
   const { userProfile, updateStreak } = useAuth()
+  const navigate = useNavigate()
   const [streak, setStreak] = useState(storage.getStudyStreak() || 0)
   const continueWatching = storage.getContinueWatching()
   const allVideos = getAllVideos()
-  const [recommended] = useState(() => [...allVideos].sort(() => Math.random() - 0.5).slice(0, 5))
+  const [recommended] = useState(() => [...allVideos].sort(() => Math.random() - 0.5).slice(0, 6))
   const videosWatched = storage.getVideosWatched().length
   const quizzesTaken = storage.getQuizHistory().length
 
@@ -46,14 +48,14 @@ export default function StudyHome() {
     updateStreak?.().then(newStreak => {
       if (newStreak) setStreak(newStreak)
     }).catch(() => {})
-    window.open(`https://www.youtube.com/watch?v=${video.id}`, '_blank')
+    navigate(`/study/watch/${video.id}`)
   }
 
   const handleContinueClick = () => {
     if (!continueWatching) return
     storage.markStudiedToday()
     updateStreak?.().catch(() => {})
-    window.open(`https://www.youtube.com/watch?v=${continueWatching.id}`, '_blank')
+    navigate(`/study/watch/${continueWatching.id}`)
   }
 
   return (
@@ -65,11 +67,11 @@ export default function StudyHome() {
         <div className="relative px-4 md:px-8 lg:px-16 py-10 md:py-16 flex flex-col md:flex-row items-center justify-between gap-6">
           <div className="flex-1">
             <h1 className="font-headline text-2xl md:text-4xl lg:text-5xl font-extrabold text-white mb-2 animate-hero-text">
-              Welcome back, {userProfile?.displayName?.split(' ')[0] || 'Student'}!
+              Welcome back, <span className="text-primary font-black">{userProfile?.displayName?.split(' ')[0] || 'Student'}</span>!
             </h1>
             <p className="text-white/70 text-base md:text-lg">Continue your learning journey. Stay focused, stay consistent.</p>
           </div>
-          <div className="glass rounded-2xl p-5 flex items-center gap-4 border border-white/20">
+          <div className="glass rounded-2xl p-5 flex items-center gap-4 border border-white/20 shadow-xl">
             <div className="text-4xl animate-fire">🔥</div>
             <div>
               <p className="text-white text-3xl font-headline font-extrabold">{streak}</p>
@@ -82,20 +84,22 @@ export default function StudyHome() {
       <div className="px-4 md:px-8 lg:px-16 py-8 space-y-10">
         {/* Quick Access Cards */}
         <section>
-          <h2 className="font-headline text-xl md:text-2xl font-bold text-on-surface mb-5">Quick Access</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 stagger-children">
+          <h2 className="font-headline text-xl md:text-2xl font-bold text-on-surface mb-5">Courses & Subjects</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 stagger-children">
             {QUICK_ACCESS.map(item => (
               <Link
                 key={item.to}
                 to={item.to}
-                className="group bg-surface-container border border-outline-variant/20 rounded-2xl p-6 hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5 transition-all hover-lift"
+                className="group bg-surface-container border border-outline-variant/20 rounded-2xl p-5 sm:p-6 hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5 transition-all hover-lift flex flex-col justify-between"
               >
-                <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-4" style={{ backgroundColor: `${item.color}15` }}>
-                  <span className="material-symbols-outlined text-2xl" style={{ color: item.color }}>{item.icon}</span>
+                <div>
+                  <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-4" style={{ backgroundColor: `${item.color}15` }}>
+                    <span className="material-symbols-outlined text-2xl" style={{ color: item.color }}>{item.icon}</span>
+                  </div>
+                  <h3 className="font-headline text-lg font-bold text-on-surface mb-1 group-hover:text-primary transition-colors">{item.label}</h3>
+                  <p className="text-on-surface-variant text-xs sm:text-sm mb-4 leading-relaxed">{item.desc}</p>
                 </div>
-                <h3 className="font-headline text-lg font-bold text-on-surface mb-1 group-hover:text-primary transition-colors">{item.label}</h3>
-                <p className="text-on-surface-variant text-sm mb-3">{item.desc}</p>
-                <span className="text-primary text-sm font-medium flex items-center gap-1">
+                <span className="text-primary text-xs sm:text-sm font-medium flex items-center gap-1">
                   Start studying <span className="material-symbols-outlined text-base group-hover:translate-x-1 transition-transform">arrow_forward</span>
                 </span>
               </Link>
@@ -109,10 +113,10 @@ export default function StudyHome() {
             <h2 className="font-headline text-xl md:text-2xl font-bold text-on-surface mb-5">Continue Watching</h2>
             <button
               onClick={handleContinueClick}
-              className="w-full text-left bg-surface-container border border-outline-variant/20 rounded-2xl overflow-hidden flex flex-col md:flex-row hover:border-primary/30 hover:shadow-lg transition-all group"
+              className="w-full text-left bg-surface-container border border-outline-variant/20 rounded-2xl overflow-hidden flex flex-col md:flex-row hover:border-primary/30 hover:shadow-lg transition-all group cursor-pointer"
             >
-              <div className="relative aspect-video md:w-80 flex-shrink-0">
-                <img src={getThumbnail(continueWatching.id)} alt="" className="w-full h-full object-cover" />
+              <div className="relative aspect-video md:w-80 flex-shrink-0 bg-black">
+                <img src={getThumbnail(continueWatching.id)} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
                 <div className="absolute inset-0 bg-black/30 flex items-center justify-center group-hover:bg-black/40 transition-colors">
                   <div className="w-14 h-14 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center group-hover:scale-110 transition-transform">
                     <span className="material-symbols-outlined filled text-white text-3xl">play_arrow</span>
@@ -121,30 +125,38 @@ export default function StudyHome() {
                 <span className="absolute bottom-2 right-2 bg-black/80 text-white text-xs px-2 py-0.5 rounded-md font-medium">{continueWatching.duration}</span>
               </div>
               <div className="p-5 flex flex-col justify-center border-l-4 border-primary">
+                <span className="text-xs text-primary font-semibold mb-1 uppercase tracking-wider">Resume Lecture</span>
                 <h3 className="font-headline text-lg font-bold text-on-surface mb-1 group-hover:text-primary transition-colors">{continueWatching.title}</h3>
                 <p className="text-on-surface-variant text-sm mb-2">{continueWatching.channel}</p>
-                <p className="text-outline text-xs">{continueWatching.views}</p>
               </div>
             </button>
           </section>
         )}
 
-        {/* Recommended Videos */}
+        {/* Recommended Videos — CSS Snap Carousel */}
         <section>
-          <h2 className="font-headline text-xl md:text-2xl font-bold text-on-surface mb-5">Recommended For You</h2>
-          <div className="flex gap-4 overflow-x-auto pb-4 hide-scrollbar">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-headline text-xl md:text-2xl font-bold text-on-surface">Recommended For You</h2>
+            <span className="text-xs text-on-surface-variant">Swipe to explore →</span>
+          </div>
+          <div className="flex gap-4 overflow-x-auto pb-4 hide-scrollbar snap-x snap-mandatory scroll-smooth">
             {recommended.map(video => (
               <button
                 key={video.id}
                 onClick={() => handleVideoClick(video)}
-                className="group flex-shrink-0 w-64 text-left"
+                className="group flex-shrink-0 w-64 text-left snap-start cursor-pointer card-interactive"
               >
-                <div className="relative aspect-video rounded-xl overflow-hidden mb-3">
-                  <img src={getThumbnail(video.id)} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
-                  <span className="absolute bottom-2 right-2 bg-black/80 text-white text-xs px-2 py-0.5 rounded-md font-medium">{video.duration}</span>
+                <div className="relative aspect-video rounded-xl overflow-hidden mb-3 bg-surface-container">
+                  <img src={getThumbnail(video.id)} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" loading="lazy" />
+                  <span className="absolute bottom-2 right-2 bg-black/80 text-white text-xs px-2 py-0.5 rounded-md font-medium backdrop-blur-sm">{video.duration}</span>
+                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                    <div className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
+                      <span className="material-symbols-outlined filled text-white text-xl">play_arrow</span>
+                    </div>
+                  </div>
                 </div>
-                <h4 className="text-on-surface text-sm font-medium line-clamp-2 group-hover:text-primary transition-colors">{video.title}</h4>
-                <p className="text-on-surface-variant text-xs mt-1">{video.channel} • {video.views}</p>
+                <h4 className="text-on-surface text-sm font-medium line-clamp-2 group-hover:text-primary transition-colors leading-tight">{video.title}</h4>
+                <p className="text-on-surface-variant text-xs mt-1.5">{video.channel} • {video.subject || 'Lecture'}</p>
               </button>
             ))}
           </div>

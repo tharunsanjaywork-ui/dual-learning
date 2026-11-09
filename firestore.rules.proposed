@@ -1,0 +1,91 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ═══ HELPER FUNCTIONS FOR TWO-ACCOUNT ARCHITECTURE ═══
+    // In DualZone, each user has two Firebase Auth accounts:
+    // 1. Study Account: email = <user>@dualzone.app, uid = studyUid (used as doc key in /users/{userId})
+    // 2. Messenger Account: email = <user>_secret@dualzone.app, uid = messengerAccountUid
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Returns true if authenticated user matches either the studyUid or messengerAccountUid
+    function isAccountOwner(userId) {
+      return isAuthenticated() && (
+        request.auth.uid == userId ||
+        (exists(/databases/$(database)/documents/users/$(userId)) &&
+         get(/databases/$(database)/documents/users/$(userId)).data.messengerAccountUid == request.auth.uid)
+      );
+    }
+
+    // ═══ USERS COLLECTION ═══
+    match /users/{userId} {
+      // Authenticated users can view profiles & search people
+      allow read: if isAuthenticated();
+      // Registration creates the profile; profile edits allowed for owner or authenticated user
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated();
+      // Account deletion strictly restricted to account owner (study or messenger UID)
+      allow delete: if isAccountOwner(userId);
+    }
+
+    // ═══ CHATS COLLECTION ═══
+    match /chats/{chatId} {
+      // Both study and secret messenger logins can read and write chat metadata
+      allow read, write: if isAuthenticated();
+    }
+
+    // ═══ MESSAGES SUBCOLLECTION ═══
+    match /messages/{chatId}/msgs/{msgId} {
+      // Allows messaging under both study account and messenger account
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated();
+      allow delete: if isAuthenticated();
+    }
+
+    // ═══ GROUP CHATS ═══
+    match /groups/{groupId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // ═══ STORIES (24h Ephemeral) ═══
+    match /stories/{storyId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if isAuthenticated();
+    }
+
+    // ═══ NOTIFICATIONS ═══
+    match /notifications/{notifId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // ═══ STUDY PROGRESS & STREAKS ═══
+    match /studyProgress/{userId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // ═══ WEBRTC CALLS & SIGNALING ═══
+    match /calls/{callId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // WebRTC ICE candidates subcollections (callerCandidates, calleeCandidates)
+    match /calls/{callId}/{candidateSub}/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // ═══ STORAGE USAGE STATS & COUNTERS ═══
+    // Central system metrics (storageStats, cloudinaryStats, notifServer)
+    match /system/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Per-user storage metrics
+    match /storageByUser/{userId} {
+      allow read, write: if isAuthenticated();
+    }
+  }
+}

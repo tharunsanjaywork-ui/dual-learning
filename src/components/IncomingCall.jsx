@@ -1,34 +1,70 @@
 import { useEffect, useState } from 'react'
 import { db } from '../lib/firebase'
 import { doc, updateDoc, getDoc, onSnapshot } from 'firebase/firestore'
+import { startIncomingRingtone, stopRingtone } from '../lib/ringtone'
 
 export default function IncomingCall({ callId, callerId, onAccept, onReject }) {
   const [caller, setCaller] = useState(null)
 
   useEffect(() => {
+    startIncomingRingtone()
+
+    const handlePanic = () => {
+      stopRingtone()
+      onReject()
+    }
+    window.addEventListener('dz_panic_switch', handlePanic)
+    window.addEventListener('beforeunload', stopRingtone)
+
+    return () => {
+      stopRingtone()
+      window.removeEventListener('dz_panic_switch', handlePanic)
+      window.removeEventListener('beforeunload', stopRingtone)
+    }
+  }, [])
+
+  useEffect(() => {
     if (!callerId) return
-    getDoc(doc(db, 'users', callerId)).then(snap => {
-      if (snap.exists()) setCaller({ id: snap.id, ...snap.data() })
-    }).catch(() => {})
+    getDoc(doc(db, 'users', callerId))
+      .then(snap => {
+        if (snap.exists()) setCaller({ id: snap.id, ...snap.data() })
+      })
+      .catch(() => {})
   }, [callerId])
 
-  // Auto-dismiss if caller hangs up before we answer
+  // Auto-dismiss if call is ended, declined, cancelled, or missed
   useEffect(() => {
     if (!callId) return
     const unsub = onSnapshot(doc(db, 'calls', callId), (snap) => {
       const data = snap.data()
-      if (data?.status === 'ended' || data?.status === 'declined') {
+      if (['ended', 'declined', 'cancelled', 'missed'].includes(data?.status)) {
+        stopRingtone()
         onReject()
       }
     })
-    return unsub
-  }, [callId])
+    return () => unsub()
+  }, [callId, onReject])
 
-  const accept = async () => {
+  // 60-second ringing timeout: mark as missed and auto-dismiss
+  useEffect(() => {
+    if (!callId) return
+    const timer = setTimeout(async () => {
+      stopRingtone()
+      try {
+        await updateDoc(doc(db, 'calls', callId), { status: 'missed' })
+      } catch {}
+      onReject()
+    }, 60000)
+    return () => clearTimeout(timer)
+  }, [callId, onReject])
+
+  const accept = () => {
+    stopRingtone()
     onAccept(callId, caller)
   }
 
   const reject = async () => {
+    stopRingtone()
     try {
       await updateDoc(doc(db, 'calls', callId), { status: 'declined' })
     } catch {}
@@ -36,30 +72,45 @@ export default function IncomingCall({ callId, callerId, onAccept, onReject }) {
   }
 
   return (
-    <div className="fixed top-4 left-4 right-4 z-[200] glass-strong rounded-2xl p-4 shadow-2xl border border-outline-variant/30 animate-fade-down">
+    <div className="fixed top-4 left-4 right-4 max-w-md mx-auto z-[200] glass-strong rounded-2xl p-4 shadow-2xl border border-outline-variant/30 animate-fade-down select-none">
       <div className="flex items-center gap-3">
-        <div className="w-12 h-12 rounded-full overflow-hidden flex-shrink-0 border-2 border-secondary/30">
-          {caller?.profilePic
-            ? <img src={caller.profilePic} className="w-full h-full object-cover" alt="" />
-            : <div className="w-full h-full bg-surface-container-highest flex items-center justify-center">
-                <span className="material-symbols-outlined text-outline">person</span>
-              </div>
-          }
+        <div className="w-12 h-12 rounded-full overflow-hidden flex-shrink-0 border-2 border-secondary/30 bg-surface-container-highest">
+          {caller?.profilePic ? (
+            <img src={caller.profilePic} className="w-full h-full object-cover" alt="" />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center">
+              <span className="material-symbols-outlined text-outline">person</span>
+            </div>
+          )}
         </div>
 
         <div className="flex-1 min-w-0">
-          <p className="text-on-surface-variant text-xs mb-0.5">Incoming voice call</p>
-          <p className="text-on-surface font-bold text-sm truncate">{caller?.displayName || 'Someone'}</p>
+          <p className="text-secondary text-xs font-semibold uppercase tracking-wider mb-0.5">
+            Incoming voice call
+          </p>
+          <p className="text-on-surface font-bold text-sm truncate">
+            {caller?.displayName || 'Someone'}
+          </p>
         </div>
 
-        <button onClick={reject}
-          className="w-11 h-11 rounded-full bg-error/20 border border-error/40 flex items-center justify-center hover:bg-error/30 active:scale-90 transition-all">
-          <span className="material-symbols-outlined text-error text-xl">call_end</span>
+        <button
+          type="button"
+          onClick={reject}
+          className="w-11 h-11 rounded-full bg-error/20 border border-error/40 flex items-center justify-center hover:bg-error/30 active:scale-90 transition-all text-error"
+          aria-label="Decline call"
+          title="Decline"
+        >
+          <span className="material-symbols-outlined text-xl">call_end</span>
         </button>
 
-        <button onClick={accept}
-          className="w-11 h-11 rounded-full bg-secondary/20 border border-secondary/40 flex items-center justify-center hover:bg-secondary/30 active:scale-90 transition-all animate-pulse">
-          <span className="material-symbols-outlined text-secondary text-xl">call</span>
+        <button
+          type="button"
+          onClick={accept}
+          className="w-11 h-11 rounded-full bg-secondary/20 border border-secondary/40 flex items-center justify-center hover:bg-secondary/30 active:scale-90 transition-all text-secondary animate-pulse"
+          aria-label="Accept call"
+          title="Accept"
+        >
+          <span className="material-symbols-outlined text-xl">call</span>
         </button>
       </div>
     </div>

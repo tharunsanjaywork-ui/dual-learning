@@ -220,18 +220,25 @@ checkNewMessages()
 setInterval(checkNewMessages, 5000)
 
 // Keep-alive ping to prevent Render free tier sleeping
-// Pings itself every 10 minutes
-const SERVER_URL = process.env.RENDER_EXTERNAL_URL || 
-  'https://dualzone-notifications-1-78jy.onrender.com'
+// Read URL strictly from environment — NO hardcoded URLs
+const SERVER_URL = process.env.RENDER_EXTERNAL_URL || process.env.SERVER_URL || null
 
-setInterval(() => {
-  const http = require('https')
-  http.get(SERVER_URL, (res) => {
-    console.log('[DualZone] 💓 Keep-alive ping OK:', res.statusCode)
-  }).on('error', (e) => {
-    console.warn('[DualZone] Keep-alive ping failed:', e.message)
-  })
-}, 10 * 60 * 1000) // every 10 minutes
+if (SERVER_URL) {
+  setInterval(() => {
+    const http = SERVER_URL.startsWith('https') ? require('https') : require('http')
+    http.get(SERVER_URL, (res) => {
+      console.log('[DualZone] 💓 Keep-alive ping OK:', res.statusCode)
+    }).on('error', (e) => {
+      console.warn('[DualZone] Keep-alive ping failed:', e.message)
+    })
+  }, 10 * 60 * 1000) // every 10 minutes
+} else {
+  console.log('[DualZone] Self keep-alive ping disabled (no RENDER_EXTERNAL_URL or SERVER_URL set)')
+}
+
+// Allowed origins for API endpoints
+const RAW_ALLOWED = process.env.ALLOWED_ORIGINS || process.env.ALLOWED_ORIGIN || process.env.CLIENT_ORIGIN || 'http://localhost:5173'
+const ALLOWED_ORIGINS = RAW_ALLOWED.split(',').map(s => s.trim().replace(/\/$/, '')).filter(Boolean)
 
 // Health check endpoint
 app.get('/', (req, res) => {
@@ -241,6 +248,61 @@ app.get('/', (req, res) => {
     notifCacheSize: sentNotifications.size,
     uptime: process.uptime()
   })
+})
+
+// Storage usage metrics endpoint — CORS restricted strictly to site origin
+app.options('/api/storage-usage', (req, res) => {
+  const reqOrigin = (req.headers.origin || '').replace(/\/$/, '')
+  if (ALLOWED_ORIGINS.includes(reqOrigin)) {
+    res.setHeader('Access-Control-Allow-Origin', reqOrigin)
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+    res.setHeader('Vary', 'Origin')
+    return res.sendStatus(204)
+  }
+  return res.status(403).json({ error: 'CORS forbidden: origin not allowed' })
+})
+
+app.get('/api/storage-usage', async (req, res) => {
+  const reqOrigin = (req.headers.origin || '').replace(/\/$/, '')
+  if (reqOrigin) {
+    if (ALLOWED_ORIGINS.includes(reqOrigin)) {
+      res.setHeader('Access-Control-Allow-Origin', reqOrigin)
+      res.setHeader('Vary', 'Origin')
+    } else {
+      return res.status(403).json({ error: 'CORS forbidden: origin not allowed' })
+    }
+  }
+
+  try {
+    let docSnap = await db.collection('system').doc('storageStats').get()
+    if (!docSnap.exists) {
+      docSnap = await db.collection('system').doc('cloudinaryStats').get()
+    }
+    const data = docSnap.exists ? docSnap.data() : {}
+    const LIMIT = 25 * 1024 * 1024 * 1024 // 25 GB
+    const primaryBytes = data.primaryBytes || 0
+    const secondaryBytes = data.secondaryBytes || 0
+    const primaryPct = Math.min(Math.round((primaryBytes / LIMIT) * 100), 100)
+    const secondaryPct = Math.min(Math.round((secondaryBytes / LIMIT) * 100), 100)
+
+    res.json({
+      primary: {
+        usedBytes: primaryBytes,
+        usedGB: (primaryBytes / (1024 ** 3)).toFixed(2),
+        totalGB: 25,
+        percentage: primaryPct
+      },
+      secondary: {
+        usedBytes: secondaryBytes,
+        usedGB: (secondaryBytes / (1024 ** 3)).toFixed(2),
+        totalGB: 25,
+        percentage: secondaryPct
+      }
+    })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
 })
 
 const PORT = process.env.PORT || 3001

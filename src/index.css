@@ -68,7 +68,27 @@ body {
   color: var(--on-surface);
   min-height: 100vh;
   min-height: 100dvh;
-  overflow-x: hidden;
+}
+
+body.in-chat {
+  overflow: hidden !important;
+  height: 100dvh !important;
+  height: var(--visual-viewport-height, 100dvh) !important;
+  position: fixed;
+  width: 100%;
+}
+
+.break-anywhere {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.chat-root-column {
+  height: 100dvh;
+  height: var(--visual-viewport-height, 100dvh);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 h1, h2, h3, h4, h5, h6 {

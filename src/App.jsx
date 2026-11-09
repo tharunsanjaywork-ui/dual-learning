@@ -4,7 +4,7 @@ import { useAuth } from './context/AuthContext'
 import { ChatProvider } from './context/ChatContext'
 import { storage } from './utils/storage'
 import { db } from './lib/firebase'
-import { collection, query, where, onSnapshot } from 'firebase/firestore'
+import { collection, query, where, onSnapshot, doc, updateDoc } from 'firebase/firestore'
 import CallScreen from './components/CallScreen'
 import IncomingCall from './components/IncomingCall'
 import { requestNotificationPermission } from './lib/notifications'
@@ -18,6 +18,8 @@ import SubjectPage from './pages/study/SubjectPage'
 import NotesPage from './pages/study/NotesPage'
 import QuizPage from './pages/study/QuizPage'
 import ProgressPage from './pages/study/ProgressPage'
+import WatchPage from './pages/study/WatchPage'
+import ChatbotGatewayPage from './pages/study/ChatbotGatewayPage'
 import ChatListPage from './pages/messenger/ChatListPage'
 import ChatPage from './pages/messenger/ChatPage'
 import GroupChatPage from './pages/messenger/GroupChatPage'
@@ -96,10 +98,23 @@ export default function App() {
     const unsub = onSnapshot(q, snap => {
       if (!snap.empty) {
         const callDoc = snap.docs[0]
+        const data = callDoc.data()
+        const createdMs = data.createdAt?.toMillis
+          ? data.createdAt.toMillis()
+          : (data.createdAt?.seconds ? data.createdAt.seconds * 1000 : (typeof data.createdAt === 'number' ? data.createdAt : 0))
+
+        // Ignore ringing calls older than 60 seconds and mark as missed
+        if (createdMs > 0 && Date.now() - createdMs > 60000) {
+          updateDoc(doc(db, 'calls', callDoc.id), { status: 'missed' }).catch(() => {})
+          setIncomingCall(null)
+          return
+        }
+
         if (!activeCall) {
           setIncomingCall({
             callId: callDoc.id,
-            callerId: callDoc.data().callerId
+            callerId: data.callerId,
+            createdAt: createdMs,
           })
         }
       } else {
@@ -121,6 +136,20 @@ export default function App() {
     window.addEventListener('dz_start_call', handler)
     return () => window.removeEventListener('dz_start_call', handler)
   }, [])
+
+  // Terminate calls immediately on panic or mode exit
+  useEffect(() => {
+    if (mode !== 'messenger') {
+      setActiveCall(null)
+      setIncomingCall(null)
+    }
+    const handlePanic = () => {
+      setActiveCall(null)
+      setIncomingCall(null)
+    }
+    window.addEventListener('dz_panic_switch', handlePanic)
+    return () => window.removeEventListener('dz_panic_switch', handlePanic)
+  }, [mode])
 
   if (loading) {
     return (
@@ -173,6 +202,9 @@ export default function App() {
         <Route path="jee-mains" element={<SubjectPage subject="jee-mains" />} />
         <Route path="jee-advanced" element={<SubjectPage subject="jee-advanced" />} />
         <Route path="neet" element={<SubjectPage subject="neet" />} />
+        <Route path="ca" element={<SubjectPage subject="ca" />} />
+        <Route path="watch/:id" element={<WatchPage />} />
+        <Route path="chatbot" element={<ChatbotGatewayPage />} />
         <Route path="notes" element={<NotesPage />} />
         <Route path="quiz" element={<QuizPage />} />
         <Route path="progress" element={<ProgressPage />} />
